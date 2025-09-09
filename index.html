@@ -390,7 +390,7 @@
                 let crossTeamConnections = 0;
                 const connectionCount = {};
                 nodes.forEach(node => connectionCount[node.id] = 0);
-                // Precompute intra-team lines (don't draw yet to avoid double rendering during animation)
+                // Precompute intra-team lines: fully connect all members within each team
                 const intraLines = [];
                 this.teams.forEach((team, teamIndex) => {
                     const teamNodes = nodes.filter(n => n.team === teamIndex);
@@ -399,26 +399,15 @@
                             for (let j = i + 1; j < teamNodes.length; j++) {
                                 const node1 = teamNodes[i];
                                 const node2 = teamNodes[j];
-                                if (Math.random() > 0.2) {
-                                    intraLines.push({
-                                        color: team.color,
-                                        x1: node1.x, y1: node1.y,
-                                        x2: node2.x, y2: node2.y
-                                    });
-                                    connectionCount[node1.id]++;
-                                    connectionCount[node2.id]++;
-                                    totalConnections++;
-                                }
+                                intraLines.push({
+                                    color: team.color,
+                                    x1: node1.x, y1: node1.y,
+                                    x2: node2.x, y2: node2.y
+                                });
+                                connectionCount[node1.id]++;
+                                connectionCount[node2.id]++;
+                                totalConnections++;
                             }
-                        }
-                        // Guarantee at least one connection
-                        if (teamNodes.length >= 2) {
-                            const node1 = teamNodes[0];
-                            const node2 = teamNodes[1];
-                            intraLines.push({ color: teamNodes[0].color, x1: node1.x, y1: node1.y, x2: node2.x, y2: node2.y });
-                            connectionCount[node1.id]++;
-                            connectionCount[node2.id]++;
-                            totalConnections++;
                         }
                     }
                 });
