@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Project Network Complexity - v2</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 15px; /* Reduced from 20px */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 1.2em;
+        }
+
+        .team-overview {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .team-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .team-card h3 {
+            margin: 0 0 5px 0;
+            color: #2c3e50;
+        }
+
+        .team-members {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .team-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin: 0 auto 10px;
+        }
+
+        .controls {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .control-group {
+            display: inline-block;
+            margin: 0 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .control-group input {
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: white;
+            margin-right: 10px;
+            width: 200px;
+        }
+
+        .control-value {
+            font-weight: bold;
+            color: #007bff;
+            font-size: 1.2em;
+        }
+
+        .project-description {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .chart-container {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+            text-align: center;
+            overflow-x: auto;
+        }
+
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            display: block;
+            margin: 0 auto;
+            width: 100%;
+            height: auto;
+            max-width: 900px;
+        }
+
+        .legend {
+            background: rgba(255,255,255,0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-line {
+            width: 30px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Multi-Project Network Complexity</h1>
+        <p class="subtitle">How multiple projects create overlapping cross-team dependencies</p>
+
+        <div class="team-overview">
+            <div class="team-card">
+                <div class="team-color" style="background: #3498db;"></div>
+                <h3>A-Team</h3>
+                <div class="team-members">4 members</div>
+            </div>
+            <div class="team-card">
+                <div class="team-color" style="background: #e74c3c;"></div>
+                <h3>B-Team</h3>
+                <div class="team-members">4 members</div>
+            </div>
+            <div class="team-card">
+                <div class="team-color" style="background: #f39c12;"></div>
+                <h3>C-Team</h3>
+                <div class="team-members">3 members</div>
+            </div>
+            <div class="team-card">
+                <div class="team-color" style="background: #2ecc71;"></div>
+                <h3>D-Team</h3>
+                <div class="team-members">3 members</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="crossTeamProjects">Multi-Team Projects:</label>
+                <input type="range" id="crossTeamProjects" min="0" max="4" value="2" step="1">
+                <span id="projectsValue" class="control-value">2</span>
+            </div>
+            <div class="control-group">
+                <label for="connectionsPerProject">Connections per Project:</label>
+                <input type="range" id="connectionsPerProject" min="1" max="8" value="2" step="1">
+                <span id="connectionsValue" class="control-value">2</span>
+            </div>
+        </div>
+
+        <div class="project-description" id="projectDescription">
+            2 projects with overlapping team dependencies
+        </div>
+
+        <div class="chart-container">
+            <canvas id="networkChart" width="900" height="650"></canvas>
+        </div>
+
+        <div class="legend" id="projectLegend">
+            <!-- Dynamic project legend will appear here -->
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalConnections">0</div>
+                <div class="stat-label">Total Connections</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="crossTeamConnections">0</div>
+                <div class="stat-label">Cross-Team Links</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="projectCount">0</div>
+                <div class="stat-label">Active Projects</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="communicationOverhead">0%</div>
+                <div class="stat-label">Communication Overhead</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class NetworkVisualizer {
+            constructor() {
+                this.teams = [
+                    { name: 'A-Team', members: 4, color: '#3498db', position: { x: 200, y: 150 } },
+                    { name: 'B-Team', members: 4, color: '#e74c3c', position: { x: 700, y: 150 } },
+                    { name: 'C-Team', members: 3, color: '#f39c12', position: { x: 200, y: 450 } },
+                    { name: 'D-Team', members: 3, color: '#2ecc71', position: { x: 700, y: 450 } }
+                ];
+                
+                this.projectColors = ['#9b59b6', '#ff6b35', '#1dd1a1', '#feca57'];
+                this.projectNames = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+                
+                this.initializeControls();
+                this.render();
+                window.addEventListener('resize', () => this.render());
+            }
+
+            hexToRgb(hex) {
+                const clean = hex.replace('#','');
+                const bigint = parseInt(clean.length === 3 ? clean.split('').map(c=>c+c).join('') : clean, 16);
+                const r = (bigint >> 16) & 255;
+                const g = (bigint >> 8) & 255;
+                const b = bigint & 255;
+                return { r, g, b };
+            }
+
+            initializeControls() {
+                document.getElementById('crossTeamProjects').addEventListener('input', (e) => {
+                    document.getElementById('projectsValue').textContent = e.target.value;
+                    this.updateDescription(parseInt(e.target.value));
+                    this.render();
+                });
+                const conSlider = document.getElementById('connectionsPerProject');
+                if (conSlider) {
+                    conSlider.addEventListener('input', (e) => {
+                        document.getElementById('connectionsValue').textContent = e.target.value;
+                        this.render();
+                    });
+                }
+                
+                this.updateDescription(2);
+            }
+
+            updateDescription(numProjects) {
+                const desc = document.getElementById('projectDescription');
+                if (numProjects === 0) {
+                    desc.textContent = "No multi-team projects - teams work independently";
+                } else {
+                    const names = this.projectNames.slice(0, numProjects).join(', ');
+                    desc.textContent = `${numProjects} projects with overlapping dependencies: ${names}`;
+                }
+            }
+
+            generateNodes(scale) {
+                const nodes = [];
+                let id = 0;
+                this.teams.forEach((team, teamIndex) => {
+                    for (let i = 0; i < team.members; i++) {
+                        const angle = (i / team.members) * 2 * Math.PI;
+                        const radius = (50 + Math.random() * 25) * scale;
+                        nodes.push({
+                            id: id++,
+                            team: teamIndex,
+                            teamName: team.name,
+                            x: team.position.x * scale + radius * Math.cos(angle),
+                            y: team.position.y * scale + radius * Math.sin(angle),
+                            color: team.color,
+                            label: `${team.name.charAt(0)}${i + 1}`
+                        });
+                    }
+                });
+                return nodes;
+            }
+
+            render() {
+                const canvas = document.getElementById('networkChart');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    // Show visible error in the chart container
+                    const err = document.createElement('div');
+                    err.style.background = '#ffe6e6';
+                    err.style.border = '1px solid #ffb3b3';
+                    err.style.padding = '12px';
+                    err.style.borderRadius = '8px';
+                    err.style.color = '#900';
+                    err.textContent = 'Canvas rendering context unavailable in this browser.';
+                    canvas.parentElement.innerHTML = '';
+                    canvas.parentElement.appendChild(err);
+                    return;
+                }
+                const dpr = window.devicePixelRatio || 1;
+                // Responsive width
+                const container = canvas.parentElement;
+                const maxWidth = 900;
+                const maxHeight = 650;
+                // Robustly determine container width; fall back to window size or maxWidth
+                let containerWidth = Math.min((container.clientWidth || container.offsetWidth || 0), maxWidth);
+                if (!containerWidth || containerWidth < 50) {
+                    const fallback = Math.min(window.innerWidth - 40, maxWidth);
+                    containerWidth = fallback > 0 ? fallback : maxWidth;
+                }
+                const containerHeight = maxHeight * (containerWidth / maxWidth);
+                canvas.style.display = 'block';
+                canvas.width = containerWidth * dpr;
+                canvas.height = containerHeight * dpr;
+                canvas.style.width = containerWidth + 'px';
+                canvas.style.height = containerHeight + 'px';
+                // Map logical 900x650 to actual canvas size
+                ctx.setTransform(containerWidth * dpr / maxWidth, 0, 0, containerHeight * dpr / maxHeight, 0, 0);
+                ctx.clearRect(0, 0, maxWidth, maxHeight);
+                const numProjects = parseInt(document.getElementById('crossTeamProjects').value);
+                const connectionsPerProject = parseInt(document.getElementById('connectionsPerProject')?.value || 2);
+                const nodes = this.generateNodes(1); // Use scale=1, transform handles scaling
+                let totalConnections = 0;
+                let crossTeamConnections = 0;
+                const connectionCount = {};
+                nodes.forEach(node => connectionCount[node.id] = 0);
+                // Precompute intra-team lines (don't draw yet to avoid double rendering during animation)
+                const intraLines = [];
+                this.teams.forEach((team, teamIndex) => {
+                    const teamNodes = nodes.filter(n => n.team === teamIndex);
+                    if (teamNodes.length > 1) {
+                        for (let i = 0; i < teamNodes.length; i++) {
+                            for (let j = i + 1; j < teamNodes.length; j++) {
+                                const node1 = teamNodes[i];
+                                const node2 = teamNodes[j];
+                                if (Math.random() > 0.2) {
+                                    intraLines.push({
+                                        color: team.color,
+                                        x1: node1.x, y1: node1.y,
+                                        x2: node2.x, y2: node2.y
+                                    });
+                                    connectionCount[node1.id]++;
+                                    connectionCount[node2.id]++;
+                                    totalConnections++;
+                                }
+                            }
+                        }
+                        // Guarantee at least one connection
+                        if (teamNodes.length >= 2) {
+                            const node1 = teamNodes[0];
+                            const node2 = teamNodes[1];
+                            intraLines.push({ color: teamNodes[0].color, x1: node1.x, y1: node1.y, x2: node2.x, y2: node2.y });
+                            connectionCount[node1.id]++;
+                            connectionCount[node2.id]++;
+                            totalConnections++;
+                        }
+                    }
+                });
+                // Build curves for animation instead of drawing immediately
+                const teamPairs = [[0,1], [0,2], [0,3], [1,2], [1,3], [2,3]];
+                const curves = [];
+                for (let projectIndex = 0; projectIndex < numProjects; projectIndex++) {
+                    const projectColor = this.projectColors[projectIndex];
+                    teamPairs.forEach(([teamA, teamB]) => {
+                        const nodesA = nodes.filter(n => n.team === teamA);
+                        const nodesB = nodes.filter(n => n.team === teamB);
+                        if (nodesA.length && nodesB.length) {
+                            for (let c = 0; c < connectionsPerProject; c++) {
+                                const nodeAIndex = (projectIndex * 7 + c) % nodesA.length;
+                                const nodeBIndex = (projectIndex * 11 + c) % nodesB.length;
+                                const a = nodesA[nodeAIndex];
+                                const b = nodesB[nodeBIndex];
+                                const dx = b.x - a.x;
+                                const dy = b.y - a.y;
+                                const dist = Math.hypot(dx, dy) || 1;
+                                const px = -dy / dist;
+                                const py = dx / dist;
+                                const spreadFactor = 0.30;
+                                const layerFactor = (c - (connectionsPerProject - 1) / 2);
+                                const intensity = dist * spreadFactor;
+                                const bend = layerFactor * (intensity / Math.max(1, (connectionsPerProject - 1))) + projectIndex * 6;
+                                const c1x = a.x + dx * 0.30 + px * bend;
+                                const c1y = a.y + dy * 0.30 + py * bend;
+                                const c2x = a.x + dx * 0.70 + px * bend * 0.8;
+                                const c2y = a.y + dy * 0.70 + py * bend * 0.8;
+                                const rgb = this.hexToRgb(projectColor);
+                                curves.push({ a, b, c1x, c1y, c2x, c2y, rgb, dist });
+                                connectionCount[a.id] += 1;
+                                connectionCount[b.id] += 1;
+                                totalConnections += 1;
+                                crossTeamConnections += 1;
+                            }
+                        }
+                    });
+                }
+                // Update legend and stats now (before animation completes)
+                this.updateLegend(numProjects);
+                const overhead = totalConnections > 0 ? Math.round((crossTeamConnections / totalConnections) * 100) : 0;
+                document.getElementById('totalConnections').textContent = totalConnections;
+                document.getElementById('crossTeamConnections').textContent = crossTeamConnections;
+                document.getElementById('projectCount').textContent = numProjects;
+                document.getElementById('communicationOverhead').textContent = overhead + '%';
+
+                const duration = 1400; // ms total
+                const staggerPortion = 0.55; // portion of timeline used to stagger start
+                const totalCurves = curves.length;
+                const startTime = performance.now();
+                if (this.animationId) cancelAnimationFrame(this.animationId);
+
+                const drawFrame = (now) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1, elapsed / duration);
+                    // Clear and redraw static elements each frame (cheap for current scale)
+                    ctx.clearRect(0, 0, maxWidth, maxHeight);
+                    // Team boundaries
+                    this.teams.forEach(team => {
+                        ctx.strokeStyle = team.color;
+                        ctx.setLineDash([8, 4]);
+                        ctx.lineWidth = 3;
+                        ctx.globalAlpha = 0.7;
+                        ctx.beginPath();
+                        ctx.arc(team.position.x, team.position.y, 85, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        ctx.fillStyle = team.color;
+                        ctx.font = 'bold 18px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.globalAlpha = 0.9;
+                        ctx.fillText(team.name, team.position.x, team.position.y - 110);
+                    });
+                    ctx.setLineDash([]);
+                    ctx.globalAlpha = 1.0;
+                    // Intra-team lines
+                    ctx.globalAlpha = 0.4;
+                    intraLines.forEach(l => {
+                        ctx.strokeStyle = l.color;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.moveTo(l.x1, l.y1);
+                        ctx.lineTo(l.x2, l.y2);
+                        ctx.stroke();
+                    });
+                    ctx.globalAlpha = 1.0;
+                    curves.forEach((cv, i) => {
+                        const startFrac = (i / totalCurves) * staggerPortion;
+                        if (progress < startFrac) return;
+                        const endFrac = startFrac + (1 - staggerPortion);
+                        const local = Math.min(1, (progress - startFrac) / Math.max(0.0001, endFrac - startFrac));
+                        const steps = 40;
+                        const maxT = local;
+                        const { a, b, c1x, c1y, c2x, c2y, rgb, dist } = cv;
+                        const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+                        grad.addColorStop(0, `rgba(${rgb.r},${rgb.g},${rgb.b},0.05)`);
+                        grad.addColorStop(0.5, `rgba(${rgb.r},${rgb.g},${rgb.b},0.85)`);
+                        grad.addColorStop(1, `rgba(${rgb.r},${rgb.g},${rgb.b},0.05)`);
+                        ctx.strokeStyle = grad;
+                        ctx.lineWidth = 2 + Math.min(1.2, dist / 600);
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        for (let s = 1; s <= steps; s++) {
+                            const t = (s / steps) * maxT;
+                            const omt = 1 - t;
+                            const x = omt*omt*omt * a.x + 3*omt*omt*t * c1x + 3*omt*t*t * c2x + t*t*t * b.x;
+                            const y = omt*omt*omt * a.y + 3*omt*omt*t * c1y + 3*omt*t*t * c2y + t*t*t * b.y;
+                            ctx.lineTo(x, y);
+                        }
+                        ctx.stroke();
+                    });
+                    // Draw nodes on top
+                    nodes.forEach(node => {
+                        const connections = connectionCount[node.id] || 0;
+                        const nodeSize = 10 + Math.min(connections * 0.2, 6);
+                        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                        ctx.beginPath();
+                        ctx.arc(node.x + 2, node.y + 2, nodeSize, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.fillStyle = node.color;
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, nodeSize, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        ctx.fillStyle = 'white';
+                        ctx.font = `bold ${Math.max(8, nodeSize - 2)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(node.label, node.x, node.y + 3);
+                    });
+                    if (progress < 1) {
+                        this.animationId = requestAnimationFrame(drawFrame);
+                    }
+                };
+                this.animationId = requestAnimationFrame(drawFrame);
+                return; // Stop further immediate drawing (stats already updated)
+            }
+
+            updateLegend(numProjects) {
+                const legend = document.getElementById('projectLegend');
+                legend.innerHTML = '';
+                
+                if (numProjects > 0) {
+                    for (let i = 0; i < numProjects; i++) {
+                        const item = document.createElement('div');
+                        item.className = 'legend-item';
+                        
+                        const line = document.createElement('div');
+                        line.className = 'legend-line';
+                        line.style.background = this.projectColors[i];
+                        
+                        const label = document.createElement('span');
+                        label.textContent = `Project ${this.projectNames[i]}`;
+                        
+                        item.appendChild(line);
+                        item.appendChild(label);
+                        legend.appendChild(item);
+                    }
+                }
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            new NetworkVisualizer();
+        });
+    </script>
+</body>
+</html>
