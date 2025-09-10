@@ -65,18 +65,18 @@ canvas#weekChart { height:760px; }
           <input id="interrupts" type="range" min="0" max="16" value="5" />
         </div>
         <div>
-          <label for="focusBlock">Longest Focus Block (hrs) <span class="slval" id="val_focusBlock">2.0h</span></label>
-          <input id="focusBlock" type="range" min="0.5" max="4" step="0.5" value="2" />
+          <label for="focusBlock">Longest Focus Block (hrs) <span class="slval" id="val_focusBlock">1.5h</span></label>
+          <input id="focusBlock" type="range" min="0.75" max="3" step="0.25" value="1.5" />
         </div>
       </div>
       <div class="inline" style="margin-top:14px;">
         <div class="w50">
-          <label for="taskSize">Avg Task Size (hrs) <span class="slval" id="val_taskSize">2.0h</span></label>
-          <input id="taskSize" type="range" min="0.5" max="8" step="0.5" value="2" />
+          <label for="taskSize">Avg Task Size (hrs) <span class="slval" id="val_taskSize">7.0h</span></label>
+          <input id="taskSize" type="range" min="0.5" max="8" step="0.5" value="7" />
         </div>
         <div class="w50">
-          <label for="recovery">Context Recovery (min) <span class="slval" id="val_recovery">12m</span></label>
-          <input id="recovery" type="range" min="2" max="45" step="1" value="12" />
+          <label for="recovery">Context Recovery (min) <span class="slval" id="val_recovery">8m</span></label>
+          <input id="recovery" type="range" min="5" max="30" step="1" value="8" />
         </div>
   <!-- Fragmentation penalty removed (Option B simplification) -->
       </div>
@@ -164,7 +164,7 @@ canvas#weekChart { height:760px; }
   const focusTime = Math.max(0, nominalHours - meetingTime - interruptActive);
   const contextScatterIndex = Math.min(10, (P * 1.6) + (meetingsPerDayAvg*0.35) + (I*0.18));
   // Quality factor integrates switching severity (Rm) instead of explicit recovery blocks.
-  const severityBoost = (Rm/45)*2.0; // up to +2 index units
+  const severityBoost = (Rm/30)*2.0; // adjusted for new 30 min max
   const combinedIndex = Math.min(12, contextScatterIndex + severityBoost);
   const qualityPenalty = Math.min(0.6, (combinedIndex/12)*0.6); // up to 60%
   const qualityFactor = 1 - qualityPenalty; // 1..0.4
