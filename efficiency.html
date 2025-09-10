@@ -19,6 +19,7 @@
  .metric { background:#fff; border:2px solid #e2e8f0; border-radius:12px; padding:14px 12px 16px; position:relative; }
  .metric h3 { margin:0 0 4px; font-size:.75rem; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:#5a6772; }
  .metric .value { font-size:1.9rem; font-weight:600; color:#0d47a1; line-height:1.15; }
+ .metric .weekly { font-size:.75rem; font-weight:600; color:#8aa4b4; text-transform:uppercase; letter-spacing:.5px; }
  .metric small { display:block; font-size:.65rem; color:#607283; margin-top:2px; }
  .chart-wrap { margin-top:30px; background:#0d1117; padding:26px 22px 32px; border-radius:18px; box-shadow:0 10px 28px -8px rgba(0,0,0,.55); }
  canvas { width:100%; height:340px; display:block; background:#fff; border-radius:10px; box-shadow:0 0 0 1px #e2e8f0; }
@@ -65,7 +66,7 @@ canvas#weekChart { height:760px; }
         </div>
         <div>
           <label for="interrupts">Unplanned Interruptions <span class="slval" id="val_interrupts">5</span></label>
-          <input id="interrupts" type="range" min="0" max="16" value="5" />
+          <input id="interrupts" type="range" min="0" max="16" value="2" />
         </div>
         <div>
           <label for="focusBlock">Longest Focus Block (hrs) <span class="slval" id="val_focusBlock">1.5h</span></label>
@@ -86,12 +87,12 @@ canvas#weekChart { height:760px; }
     </div>
 
     <div class="grid" id="metrics">
-      <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><small>Hours theoretically available (8h baseline)</small></div>
-  <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><small>Estimated deep work hours (raw)</small></div>
-  <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><small id="m_effectiveDetail">Focus × quality factor</small></div>
-  <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><small>Effective / Nominal</small></div>
-  <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><small>Meetings + interruptions</small></div>
-      <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><small>Higher = more scattered (1–10)</small></div>
+    <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><div class="weekly" id="m_nominal_w">0h wk</div><small>Hours theoretically available (8h baseline)</small></div>
+  <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><div class="weekly" id="m_focus_w">0h wk</div><small>Estimated deep work hours (raw)</small></div>
+  <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><div class="weekly" id="m_effective_w">0h wk</div><div class="weekly" id="m_loss_w" style="opacity:.85;">Loss 0h wk</div><small id="m_effectiveDetail">Focus × quality factor</small></div>
+  <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><div class="weekly" id="m_util_w">0% wk</div><small>Effective / Nominal</small></div>
+  <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><div class="weekly" id="m_switchCost_w">0h wk</div><small>Meetings + interruptions</small></div>
+    <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><div class="weekly" id="m_contextIndex_w">0 avg</div><small>Higher = more scattered (1–10)</small></div>
     </div>
 
     <div class="chart-wrap">
@@ -136,9 +137,15 @@ canvas#weekChart { height:760px; }
       [candidates[i],candidates[j]] = [candidates[j],candidates[i]];
     }
     const picked = candidates.slice(0, totalMeetings);
+    // Choose one meeting to be a 1-hour meeting (avoid lunch overlap).
+    if(picked.length){
+      const longEligible = picked.filter(p=> p.start + 1 <= 11.5 || p.start >= 12); // exclude start 11 which would cross lunch
+      const longChoice = (longEligible.length? longEligible : [picked[0]])[0];
+      longChoice.long = true;
+    }
     const map = {0:[],1:[],2:[],3:[],4:[]};
-    picked.forEach(p=> map[p.day].push(p.start));
-    Object.values(map).forEach(arr=> arr.sort((a,b)=>a-b));
+    picked.forEach(p=> map[p.day].push({start:p.start, dur: p.long? 1.0 : 0.5}));
+    Object.values(map).forEach(arr=> arr.sort((a,b)=>a.start-b.start));
     return map;
   }
 
@@ -158,8 +165,9 @@ canvas#weekChart { height:760px; }
       const lunchDur = 0.5; // fixed lunch duration excluded from capacity
   const socialDur = 0.25; // 15 min post-lunch socializing
   const nominalHours = grossDayHours - lunchDur - socialDur; // remove lunch & socializing from productive capacity
+  const weeklyMeetingHours = totalMeetings>0 ? ((totalMeetings - 1)*0.5 + 1.0) : 0; // one long (1h) + rest 0.5h
   const meetingsPerDayAvg = totalMeetings / 5;
-  const meetingTime = meetingsPerDayAvg * 0.5; // each meeting 0.5h, averaged per day
+  const meetingTime = weeklyMeetingHours / 5; // average per day hours from meetings
       const interruptActive = I * (5/60);
   // Regenerate random meeting map only when meeting count changes
   if(prevMeetingCount !== totalMeetings){
@@ -181,12 +189,14 @@ canvas#weekChart { height:760px; }
   const qualityPenalty = Math.min(0.6, (combinedIndex/12)*0.6); // up to 60%
   const qualityFactor = 1 - qualityPenalty; // 1..0.4
   const effectiveOutput = focusTime * qualityFactor;
-  const switchCost = meetingTime + interruptActive; // explicit time losses only
+  // Weekly-based switch cost (sum then average) to avoid rounding confusion
+  const weeklySwitchCost = weeklyMeetingHours + (I * (5/60) * 5); // total meeting time + total interruption time
+  const switchCost = weeklySwitchCost / 5; // daily average derived from weekly sum
       OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
     OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
   OUT.effective.textContent = effectiveOutput.toFixed(1)+'h';
   OUT.util.textContent = Math.round((effectiveOutput/nominalHours)*100)+'%';
-  OUT.switchCost.textContent = switchCost.toFixed(1)+'h';
+  OUT.switchCost.textContent = switchCost.toFixed(2)+'h';
   OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
   const loss = focusTime - effectiveOutput;
   const effDet = els('m_effectiveDetail');
@@ -199,7 +209,23 @@ canvas#weekChart { height:760px; }
   setTxt('val_focusBlock', F.toFixed(1)+'h');
   setTxt('val_taskSize', TS.toFixed(1)+'h');
   setTxt('val_recovery', Rm+'m');
-  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed};
+  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,weeklyMeetingHours,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed};
+  // Weekly aggregates (approximate: multiply per-day averages by 5)
+  const weekFocus = focusTime * 5;
+  const weekEffective = effectiveOutput * 5;
+  const weekSwitch = weeklySwitchCost; // already full-week aggregate
+  const weekNominal = nominalHours * 5;
+  const weekUtil = weekEffective / weekNominal;
+  const weekLoss = (weekFocus - weekEffective);
+  // Populate weekly summary section
+  const setIf = (id,val)=>{ const el = els(id); if(el) el.textContent = val; };
+  setIf('m_focus_w', weekFocus.toFixed(1)+'h wk');
+  setIf('m_effective_w', weekEffective.toFixed(1)+'h wk');
+  setIf('m_loss_w', 'Loss '+weekLoss.toFixed(1)+'h wk');
+  setIf('m_switchCost_w', weekSwitch.toFixed(1)+'h wk');
+  setIf('m_nominal_w', weekNominal.toFixed(1)+'h wk');
+  setIf('m_util_w', Math.round(weekUtil*100)+'% wk');
+  setIf('m_contextIndex_w', contextScatterIndex.toFixed(1)+' avg');
       drawWeek(metrics);
       requestAnimationFrame(()=>drawWeek(metrics));
       setTimeout(()=>drawWeek(metrics),90);
@@ -275,8 +301,8 @@ canvas#weekChart { height:760px; }
   events.push({type:'social', start:12, end:12.25});
       // Meetings distributed Mon-Thu only, none on Fri
       if(data.totalMeetings>0 && dayIndex < 4){
-        const mtStartsDay = (data.meetingMap && data.meetingMap[dayIndex]) ? data.meetingMap[dayIndex] : [];
-        mtStartsDay.forEach(start=> events.push({type:'meeting', start, end:start+meetingDur}));
+        const mtDay = (data.meetingMap && data.meetingMap[dayIndex]) ? data.meetingMap[dayIndex] : [];
+        mtDay.forEach(m=> events.push({type:'meeting', start:m.start, end:m.start + m.dur}));
       }
       events.sort((a,b)=>a.start-b.start);
       let remainingFocus = usableFocus;
@@ -493,6 +519,28 @@ canvas#weekChart { height:760px; }
             prev.end = cur.end; merged.splice(i,1); i--; continue;
           }
         }
+      }
+      // Enforce maximum focus block length (achievableBlock) by splitting oversized blocks
+      if(achievableBlock && achievableBlock > 0){
+        const adjusted = [];
+        for(const ev of merged){
+          if(ev.type==='focus'){
+            const len = ev.end - ev.start;
+            if(len > achievableBlock + 1e-6){
+              const segments = Math.ceil(len / achievableBlock); // ensures each <= achievableBlock
+              const segLen = len / segments;
+              let cursor = ev.start;
+              for(let s=0;s<segments;s++){
+                const segEnd = (s===segments-1)? ev.end : cursor + segLen;
+                adjusted.push({type:'focus', start:cursor, end:segEnd, synthetic:ev.synthetic});
+                cursor = segEnd;
+              }
+              continue;
+            }
+          }
+          adjusted.push(ev);
+        }
+        return adjusted;
       }
       return merged;
     }
