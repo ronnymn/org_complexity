@@ -70,11 +70,7 @@
         @media (max-width: 520px) {
             .team-overview .team-card { flex: 1 1 100%; }
         }
-        /* Inactive cards compress without affecting active card height */
-        .team-overview .team-card.inactive {
-            flex: 0 0 auto;
-            width: auto;
-        }
+    /* Inactive cards keep same flex sizing as active */
 
         .team-card {
             background: #f8f9fa;
@@ -83,7 +79,10 @@
             padding: 15px;
             text-align: center;
             position: relative;
-            transition: opacity 0.25s, background 0.25s, padding 0.25s, transform 0.25s;
+            transition: opacity 0.25s, background 0.25s, filter 0.25s;
+            min-height: 160px;
+            box-sizing: border-box;
+            cursor: pointer;
         }
 
         .team-card h3 {
@@ -94,27 +93,11 @@
         .team-card.inactive {
             opacity: 0.45;
             background: #eceff1;
-        }
-        .team-card.inactive .team-color,
-        .team-card.inactive .team-members,
-        .team-card.inactive select {
-            display: none;
-        }
-        .team-card.inactive {
-            padding: 4px 6px;
-            border-radius: 8px;
-            min-height: unset;
+            filter: grayscale(10%);
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
         }
-        .team-card.inactive h3 {
-            font-size: 0.75em;
-            margin: 0;
-        }
-        .team-card.inactive .team-toggle-wrapper { position: static; top: auto; right: auto; }
+    /* Keep same heading size when inactive */
+        .team-card.inactive .team-toggle-wrapper { position: absolute; top: 6px; right: 6px; }
 
         .team-toggle-wrapper {
             position: absolute;
