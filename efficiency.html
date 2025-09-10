@@ -99,8 +99,8 @@ canvas#weekChart { height:760px; }
   <button id="reshuffleBtn" class="shuffle-btn" aria-label="Reshuffle schedule" title="Reshuffle random allocation">↻</button>
   <div id="calTooltip" class="cal-tip"></div>
       <div class="legend" id="legend">
-        <span><i style="background:#1e88e5"></i> Focus Blocks</span>
-  <span><i style="background:#ff7043"></i> Meetings</span>
+    <span><i style="background:#1e88e5"></i> Focus Blocks</span>
+  <span><i style="background:#8e24aa"></i> Meetings</span>
   <span><i style="background:#ef5350"></i> Interruptions</span>
   <span><i style="background:#90a4ae"></i> Quality Loss (shaded)</span>
   <span><i style="background:#ffa000"></i> Lunch</span>
@@ -257,7 +257,8 @@ canvas#weekChart { height:760px; }
   const usableFocus = data.focusTime; // per day (approx evenly assumed)
     const achievableBlock = data.achievableFocusBlock;
   const meetingSlots = [9.5,10,10.5,11,13,13.5,14,14.5];
-  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', project:'#26a69a', lunch:'#ffa000', social:'#ffd54f', loss:'#90a4ae' };
+  // Color palette: ensure meeting distinct from lunch (purple), lighter red for interruptions
+  const palette = { focus:'#1e88e5', meeting:'#8e24aa', interrupt:'#ef5350', project:'#26a69a', lunch:'#ffa000', social:'#ffd54f', loss:'#90a4ae' };
 
     function makeRng(seed){
       let s = seed >>> 0;
