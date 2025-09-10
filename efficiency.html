@@ -126,7 +126,9 @@ canvas#weekChart { height:520px; }
       const TS = parseFloat(els('taskSize').value);
       const Rm = parseFloat(els('recovery').value);
       const FragPct = parseFloat(els('fragmentPenalty').value)/100;
-      const nominalHours = 8;
+      const grossDayHours = 8; // includes lunch
+      const lunchDur = 0.5; // fixed lunch duration excluded from capacity
+      const nominalHours = grossDayHours - lunchDur;
       const meetingTime = M * 0.5;
       const interruptActive = I * (5/60);
       const switches = M + I + Math.max(0, P-1);
@@ -150,12 +152,11 @@ canvas#weekChart { height:520px; }
       OUT.switchCost.textContent = switchCost.toFixed(1)+'h';
       OUT.fragmentLoss.textContent = fragmentLoss.toFixed(1)+'h';
       OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
-  const metrics = {P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock};
-  drawWeek(metrics);
-  // Second & third pass attempts if width was 0
-  requestAnimationFrame(()=>drawWeek(metrics));
-  setTimeout(()=>drawWeek(metrics),90);
-  setTimeout(()=>drawWeek(metrics),240);
+      const metrics = {P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock};
+      drawWeek(metrics);
+      requestAnimationFrame(()=>drawWeek(metrics));
+      setTimeout(()=>drawWeek(metrics),90);
+      setTimeout(()=>drawWeek(metrics),240);
     }
 
   function drawWeek(data){
@@ -199,75 +200,71 @@ canvas#weekChart { height:520px; }
       ctxW.font = '11px system-ui';
       ctxW.fillText((h<10?'0':'')+Math.floor(h)+':00', 10, y+4);
     }
-    // Build per-day schedule
+  // Build per-day schedule
     const meetingDur = 0.5; // hours
     const interruptDur = 5/60; // hours
     const recoveryDur = (data.recoveryTime / Math.max(1, data.M + data.I + Math.max(0,data.P-1))) || 0; // average per event
     const usableFocus = data.focusTime; // per day
     const achievableBlock = data.achievableFocusBlock;
-    const meetingSlots = [8.5,9,10,11,13,14,15];
-    const palette = {
-      focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000'
-    };
+  const meetingSlots = [8.5,9,10,11,13,14,15];
+  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000', effective:'#26a69a' };
+
     function scheduleDay(dayIndex){
       let events = [];
-      // Fixed lunch break 11:30 - 12:00
+      // Lunch
       events.push({type:'lunch', start:11.5, end:12});
-      // Meetings
-      for(let m=0; m<data.M; m++){
+      // Meetings + recovery after each
+      for(let m=0; m<data.M; m++) {
         const start = meetingSlots[(m+dayIndex)%meetingSlots.length];
         events.push({type:'meeting', start, end:start+meetingDur});
         events.push({type:'recovery', start:start+meetingDur, end:start+meetingDur+recoveryDur});
       }
-      // Sort
       events.sort((a,b)=>a.start-b.start);
-      // Insert focus blocks between events
+      // Insert focus blocks in gaps
       let pointer = workHours.start;
       let remainingFocus = usableFocus;
-      const pushFocus = (gapEnd)=>{
+      const pushFocus = gapEnd => {
         while(remainingFocus>0.05 && pointer < gapEnd){
           const maxEnd = Math.min(gapEnd, pointer + Math.min(achievableBlock, remainingFocus));
           if(maxEnd - pointer < 0.05) break;
-            events.push({type:'focus', start:pointer, end:maxEnd});
-            remainingFocus -= (maxEnd - pointer);
-            pointer = maxEnd;
-            if(remainingFocus>0.05 && pointer < gapEnd){
-              // micro recovery between fragmented focus blocks
-              const recEnd = Math.min(gapEnd, pointer + recoveryDur*0.4);
-              if(recEnd - pointer > 0.03){ events.push({type:'recovery', start:pointer, end:recEnd}); pointer = recEnd; }
-            }
+          events.push({type:'focus', start:pointer, end:maxEnd});
+          remainingFocus -= (maxEnd - pointer);
+          pointer = maxEnd;
+          if(remainingFocus>0.05 && pointer < gapEnd){
+            const recEnd = Math.min(gapEnd, pointer + recoveryDur*0.4);
+            if(recEnd - pointer > 0.03){ events.push({type:'recovery', start:pointer, end:recEnd}); pointer = recEnd; }
+          }
         }
       };
-      events.forEach(ev=>{
-        if(pointer < ev.start) pushFocus(ev.start);
-        pointer = Math.max(pointer, ev.end);
-      });
+      events.forEach(ev=>{ if(pointer < ev.start) pushFocus(ev.start); pointer = Math.max(pointer, ev.end); });
       if(pointer < workHours.end) pushFocus(workHours.end);
-      // Interruptions: pick random focus blocks > interruptDur
-      const focusBlocks = events.filter(e=>e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
+      // Interruptions inserted into focus blocks
+      let focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
       for(let k=0; k<data.I && focusBlocks.length; k++){
         const idx = (k*37 + dayIndex*13) % focusBlocks.length;
         const fb = focusBlocks[idx];
-        const mid = fb.start + (fb.end - fb.start)* (0.3 + 0.4*((k+dayIndex)%3)/2);
+        const mid = fb.start + (fb.end - fb.start) * (0.3 + 0.4*((k+dayIndex)%3)/2);
         const intStart = Math.max(fb.start, Math.min(fb.end - interruptDur, mid - interruptDur/2));
         const intEnd = intStart + interruptDur;
-        // Split focus block
         events = events.filter(e=> e!==fb);
         if(intStart - fb.start > 0.04) events.push({type:'focus', start:fb.start, end:intStart});
         events.push({type:'interrupt', start:intStart, end:intEnd});
-        if(intEnd + recoveryDur < fb.end) {
+        if(intEnd + recoveryDur < fb.end){
           events.push({type:'recovery', start:intEnd, end:Math.min(fb.end, intEnd+recoveryDur)});
           if(fb.end - (intEnd+recoveryDur) > 0.05) events.push({type:'focus', start:intEnd+recoveryDur, end:fb.end});
-        } else if(fb.end - intEnd > 0.04) {
+        } else if(fb.end - intEnd > 0.04){
           events.push({type:'focus', start:intEnd, end:fb.end});
         }
+        focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
       }
-      // Clip overflow
+      // Clip & sort
       events = events.filter(e=> e.start < workHours.end && e.end > workHours.start);
       events.forEach(e=> { e.start = Math.max(e.start, workHours.start); e.end = Math.min(e.end, workHours.end); });
-      return events.sort((a,b)=> a.start - b.start || a.type.localeCompare(b.type));
+      events.sort((a,b)=> a.start - b.start || a.type.localeCompare(b.type));
+      return events; // gaps left blank visually
     }
-    // Draw events
+  // Draw events with effective overlay
+    let effRemaining = data.effectiveOutput;
     days.forEach((d,di)=>{
       const dayEvents = scheduleDay(di);
       const baseX = margin.left + di*colW;
@@ -275,13 +272,28 @@ canvas#weekChart { height:520px; }
         const x = baseX + 4;
         const y = hourToY(ev.start) + 1;
         const w = colW - 8;
-        const h = Math.max(4, (ev.end - ev.start)/hourSpan * gridH - 2);
+        const dur = ev.end - ev.start;
+        const h = Math.max(4, (dur)/hourSpan * gridH - 2);
         ctxW.fillStyle = palette[ev.type] || '#90a4ae';
         ctxW.globalAlpha = ev.type==='focus'? 0.90 : 0.85;
         ctxW.beginPath();
         ctxW.roundRect ? ctxW.roundRect(x,y,w,h,6) : ctxW.fillRect(x,y,w,h);
         ctxW.fill();
         ctxW.globalAlpha = 1;
+        if(ev.type==='focus' && effRemaining > 0){
+          const effChunk = Math.min(dur, effRemaining);
+          const ratio = effChunk / dur;
+          const effH = Math.max(3, h * ratio - 2);
+          const inset = 4;
+            ctxW.fillStyle = palette.effective;
+            ctxW.globalAlpha = 0.85;
+            const yEff = y + (h - effH)/2;
+            ctxW.beginPath();
+            ctxW.roundRect ? ctxW.roundRect(x+inset,yEff,w-inset*2,effH,4) : ctxW.fillRect(x+inset,yEff,w-inset*2,effH);
+            ctxW.fill();
+            ctxW.globalAlpha = 1;
+            effRemaining -= effChunk;
+        }
         ctxW.fillStyle = '#ffffff';
         ctxW.font = '600 10px system-ui';
         const label = ev.type==='focus'? 'Focus' : ev.type==='meeting'? 'Meet' : ev.type==='interrupt'? 'Int' : ev.type==='recovery'? 'Rec' : ev.type;
