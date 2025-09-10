@@ -125,7 +125,25 @@ canvas#weekChart { height:760px; }
     const weekCanvas = els('weekChart');
   // Cached randomized weekly meeting distribution
   let meetingMapCache = null; // {0:[],1:[],2:[],3:[],4:[]}
+  // Cached randomized weekly interruption distribution (counts per Mon..Fri)
+  let interruptsMapCache = null; // [n,n,n,n,n]
+  let prevInterruptCount = null;
   let prevMeetingCount = null;
+  function generateInterruptMap(totalInterrupts){
+    const out = [0,0,0,0,0];
+    totalInterrupts = Math.max(0, Math.floor(totalInterrupts||0));
+    if(totalInterrupts === 0) return out;
+    const base = Math.floor(totalInterrupts / 5);
+    let extra = totalInterrupts % 5;
+    for(let i=0;i<5;i++) out[i]=base;
+    // Use a small deterministic shuffle seeded by focusSeed so distribution stays stable until reshuffle
+    let s = (focusSeed || 0) >>> 0;
+    const rnd = ()=>{ s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; };
+    const idxs = [0,1,2,3,4];
+    for(let i=idxs.length-1;i>0;i--){ const j = Math.floor(rnd()*(i+1)); [idxs[i], idxs[j]] = [idxs[j], idxs[i]]; }
+    for(let i=0;i<extra;i++) out[idxs[i]]++;
+    return out;
+  }
   function generateMeetingMap(totalMeetings){
     const slots = [9.5,10,10.5,11,13,13.5,14,14.5]; // allowed start times
     const days = [0,1,2,3]; // Mon-Thu only
@@ -168,7 +186,16 @@ canvas#weekChart { height:760px; }
   const weeklyMeetingHours = totalMeetings>0 ? ((totalMeetings - 1)*0.5 + 1.0) : 0; // one long (1h) + rest 0.5h
   const meetingsPerDayAvg = totalMeetings / 5;
   const meetingTime = weeklyMeetingHours / 5; // average per day hours from meetings
-      const interruptActive = I * (5/60);
+      // Regenerate interrupt distribution map when weekly interrupt count changes
+      if(prevInterruptCount !== I){
+        interruptsMapCache = generateInterruptMap(I);
+        prevInterruptCount = I;
+      }
+      const interruptDur = 5/60; // hours per interrupt
+      const totalInterruptHoursWeek = (I * interruptDur);
+      const interruptPerDayHours = (interruptsMapCache || generateInterruptMap(I)).map(n=> n * interruptDur);
+      // approximate per-day average interruption hours for aggregate calculations
+      const interruptActive = interruptPerDayHours.reduce((a,b)=>a+b,0)/5;
   // Regenerate random meeting map only when meeting count changes
   if(prevMeetingCount !== totalMeetings){
     meetingMapCache = generateMeetingMap(totalMeetings);
@@ -190,7 +217,7 @@ canvas#weekChart { height:760px; }
   const qualityFactor = 1 - qualityPenalty; // 1..0.4
   const effectiveOutput = focusTime * qualityFactor;
   // Weekly-based switch cost (sum then average) to avoid rounding confusion
-  const weeklySwitchCost = weeklyMeetingHours + (I * (5/60) * 5); // total meeting time + total interruption time
+  const weeklySwitchCost = weeklyMeetingHours + totalInterruptHoursWeek; // total meeting time + total interruption time
   const switchCost = weeklySwitchCost / 5; // daily average derived from weekly sum
       OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
     OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
@@ -209,7 +236,7 @@ canvas#weekChart { height:760px; }
   setTxt('val_focusBlock', F.toFixed(1)+'h');
   setTxt('val_taskSize', TS.toFixed(1)+'h');
   setTxt('val_recovery', Rm+'m');
-  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,weeklyMeetingHours,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed};
+  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,weeklyMeetingHours,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed, IMap: interruptsMapCache};
   // Weekly aggregates (approximate: multiply per-day averages by 5)
   const weekFocus = focusTime * 5;
   const weekEffective = effectiveOutput * 5;
@@ -344,7 +371,16 @@ canvas#weekChart { height:760px; }
       // Interruptions inserted into focus blocks
   let focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
       let lastInterruptEnd = -Infinity;
-      for(let k=0; k<data.I && focusBlocks.length; k++){
+      // Determine how many interrupts to place this day (use weekly map if available)
+      let interruptsThisDay = 0;
+      if(data.IMap && Array.isArray(data.IMap)){
+        interruptsThisDay = data.IMap[dayIndex] || 0;
+      } else {
+        const basePerDay = Math.floor((data.I||0) / 5);
+        const extra = (data.I||0) % 5;
+        interruptsThisDay = basePerDay + (dayIndex < extra ? 1 : 0);
+      }
+      for(let k=0; k<interruptsThisDay && focusBlocks.length; k++){
         let attempts = 0;
         let placed = false;
         while(attempts < focusBlocks.length && !placed){
@@ -623,6 +659,9 @@ canvas#weekChart { height:760px; }
       const totalM = baseM + P;
       meetingMapCache = generateMeetingMap(totalM);
       prevMeetingCount = totalM;
+  const I = parseFloat(els('interrupts').value);
+  interruptsMapCache = generateInterruptMap(I);
+  prevInterruptCount = I;
       focusSeed = Math.floor(Math.random()*1e9);
       lastInputSignature = '';
       calc();
