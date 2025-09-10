@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Developer Efficiency & Context Switching</title>
+<style>
+ body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; margin:0; background:linear-gradient(135deg,#485563,#29323c); color:#1e2932; padding:18px; }
+ .container { max-width:900px; margin:0 auto; background:#fff; border-radius:18px; padding:32px 34px 44px; box-shadow:0 18px 40px -12px rgba(0,0,0,.25); }
+ h1 { margin:0 0 6px; font-weight:300; font-size:2.2rem; text-align:center; color:#1f2d3d; }
+ .subtitle { text-align:center; color:#5f6b76; margin:0 0 26px; }
+ nav a { color:#2962ff; text-decoration:none; font-weight:600; }
+ nav { text-align:center; margin-bottom:24px; }
+ .panel { background:#f6f8fa; border:1px solid #e2e8f0; padding:18px 20px 20px; border-radius:14px; margin-bottom:26px; }
+ .panel h2 { margin:0 0 10px; font-size:1.15rem; font-weight:600; color:#253041; }
+ label { font-size:.85rem; font-weight:600; display:block; margin-bottom:4px; letter-spacing:.5px; text-transform:uppercase; color:#475665; }
+ input[type=range] { width:100%; }
+ .grid { display:grid; gap:18px; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-top:6px; }
+ .metric { background:#fff; border:2px solid #e2e8f0; border-radius:12px; padding:14px 12px 16px; position:relative; }
+ .metric h3 { margin:0 0 4px; font-size:.75rem; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:#5a6772; }
+ .metric .value { font-size:1.9rem; font-weight:600; color:#0d47a1; line-height:1.15; }
+ .metric small { display:block; font-size:.65rem; color:#607283; margin-top:2px; }
+ .chart-wrap { margin-top:30px; background:#0d1117; padding:26px 22px 32px; border-radius:18px; box-shadow:0 10px 28px -8px rgba(0,0,0,.55); }
+ canvas { width:100%; height:340px; display:block; background:#fff; border-radius:10px; box-shadow:0 0 0 1px #e2e8f0; }
+ .explain { font-size:.85rem; line-height:1.5; color:#334554; }
+ .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; }
+ .legend span { display:inline-flex; align-items:center; gap:6px; font-size:.7rem; color:#d0d6dd; background:#1c242d; padding:6px 8px 6px 6px; border-radius:20px; }
+ .legend i { width:14px; height:14px; border-radius:50%; display:inline-block; }
+ .foot-note { margin-top:34px; font-size:.72rem; color:#637383; line-height:1.4; }
+ .dual { display:flex; gap:26px; flex-wrap:wrap; }
+ .dual > div { flex:1 1 260px; }
+ .inline { display:flex; gap:12px; flex-wrap:wrap; }
+ .inline .w50 { flex:1 1 120px; min-width:120px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <nav><a href="index.html">← Back to Network Complexity</a></nav>
+    <h1>Developer Context Switching Efficiency</h1>
+    <p class="subtitle">How meetings, project fragmentation, and interruptions erode effective output</p>
+
+    <div class="panel">
+      <h2>Interactive Factors</h2>
+      <div class="dual">
+        <div>
+          <label for="projects">Concurrent Projects</label>
+          <input id="projects" type="range" min="1" max="8" value="3" />
+        </div>
+        <div>
+          <label for="meetings">Meetings / Day</label>
+          <input id="meetings" type="range" min="0" max="12" value="4" />
+        </div>
+        <div>
+          <label for="interrupts">Unplanned Interruptions</label>
+          <input id="interrupts" type="range" min="0" max="16" value="5" />
+        </div>
+        <div>
+          <label for="focusBlock">Longest Focus Block (hrs)</label>
+          <input id="focusBlock" type="range" min="0.5" max="4" step="0.5" value="2" />
+        </div>
+      </div>
+      <div class="inline" style="margin-top:14px;">
+        <div class="w50">
+          <label for="taskSize">Avg Task Size (hrs)</label>
+          <input id="taskSize" type="range" min="0.5" max="8" step="0.5" value="2" />
+        </div>
+        <div class="w50">
+          <label for="recovery">Context Recovery (min)</label>
+          <input id="recovery" type="range" min="2" max="45" step="1" value="12" />
+        </div>
+        <div class="w50">
+          <label for="fragmentPenalty">Fragmentation Penalty %</label>
+          <input id="fragmentPenalty" type="range" min="0" max="40" step="1" value="18" />
+        </div>
+      </div>
+    </div>
+
+    <div class="grid" id="metrics">
+      <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><small>Hours theoretically available (8h baseline)</small></div>
+      <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><small>Estimated deep work hours</small></div>
+      <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><small>Focus time after switching drag</small></div>
+      <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><small>Effective / Nominal</small></div>
+      <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><small>Time lost to project/meeting/task switching</small></div>
+      <div class="metric"><h3>Fragment Loss</h3><div class="value" id="m_fragmentLoss">0h</div><small>Lost due to sub-task fragmentation</small></div>
+      <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><small>Higher = more scattered (1–10)</small></div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="effChart" width="900" height="340"></canvas>
+      <div class="legend" id="legend">
+        <span><i style="background:#1e88e5"></i> Focus Blocks</span>
+        <span><i style="background:#ff7043"></i> Meetings</span>
+        <span><i style="background:#ab47bc"></i> Recovery</span>
+        <span><i style="background:#ef5350"></i> Interruptions</span>
+        <span><i style="background:#26a69a"></i> Effective Output</span>
+      </div>
+    </div>
+
+    <p class="explain">This model is a simplified illustration. Increasing simultaneous projects raises cognitive load and reduces the average uninterrupted block size. Meetings and interruptions splinter the day, causing recovery overhead. Fragmentation penalty represents subtle productivity decay when tasks are forced into slices smaller than their natural size. Adjust sliders to see impact on effective output and switching losses.</p>
+
+    <div class="foot-note">Assumptions: 8h gross day. Recovery applies after each meeting, interruption, and project shift. Focus block length bounded by longest focus slider and number of fragmentation events. This is not a scientific instrument — it's a conversation and intuition aid.</div>
+  </div>
+<script>
+(function(){
+  const els = id => document.getElementById(id);
+  const inputs = ['projects','meetings','interrupts','focusBlock','taskSize','recovery','fragmentPenalty'].map(els);
+  const OUT = {
+    nominal: els('m_nominal'), focus: els('m_focus'), effective: els('m_effective'), util: els('m_util'),
+    switchCost: els('m_switchCost'), fragmentLoss: els('m_fragmentLoss'), contextIndex: els('m_contextIndex')
+  };
+  const canvas = els('effChart');
+  const ctx = canvas.getContext('2d');
+
+  function calc(){
+    const P = parseFloat(els('projects').value); // projects
+    const M = parseFloat(els('meetings').value); // meetings
+    const I = parseFloat(els('interrupts').value); // interruptions
+    const F = parseFloat(els('focusBlock').value); // max focus block
+    const TS = parseFloat(els('taskSize').value); // avg task size
+    const Rm = parseFloat(els('recovery').value); // recovery minutes
+    const FragPct = parseFloat(els('fragmentPenalty').value)/100; // penalty
+
+    const nominalHours = 8; // baseline day
+    // Meeting time assumption: 30 min per meeting average
+    const meetingTime = M * 0.5; // hours
+    // Interrupt direct time cost (assume 5 min each) + recovery each
+    const interruptActive = I * (5/60); // hours direct
+    const switches = M + I + Math.max(0, P-1); // events causing recovery
+    const recoveryTime = switches * (Rm/60);
+
+    // Project fragmentation cost: more projects reduce effective max block
+    const fragmentationFactor = 1 / Math.max(1, Math.pow(P, 0.55));
+    const achievableFocusBlock = Math.min(F, TS, F * fragmentationFactor + 0.25);
+
+    // Raw focus capacity after subtracting fixed costs
+    let rawFocus = nominalHours - meetingTime - interruptActive - recoveryTime;
+    rawFocus = Math.max(0, rawFocus);
+
+    // Fragmentation loss: portion of tasks forced smaller than natural size
+    const naturalBlocks = rawFocus / TS;
+    const forcedBlocks = rawFocus / achievableFocusBlock;
+    const extraSlices = Math.max(0, forcedBlocks - naturalBlocks);
+    const fragmentLoss = extraSlices * 0.05 * achievableFocusBlock * FragPct * 2; // scaled heuristic
+
+    const focusTime = Math.max(0, rawFocus - fragmentLoss);
+
+    // Switching cognitive tax reduces effective output (nonlinear with P)
+    const contextScatterIndex = Math.min(10, (P * 1.6) + (M*0.35) + (I*0.18));
+    const scatterPenalty = 1 - Math.min(0.55, (contextScatterIndex/10)*0.55); // cap at 55%
+    const effectiveOutput = focusTime * scatterPenalty;
+
+    const switchCost = meetingTime + interruptActive + recoveryTime;
+
+    OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
+    OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
+    OUT.effective.textContent = effectiveOutput.toFixed(1)+ 'h';
+    OUT.util.textContent = nominalHours>0 ? Math.round((effectiveOutput/nominalHours)*100)+'%' : '0%';
+    OUT.switchCost.textContent = switchCost.toFixed(1)+ 'h';
+    OUT.fragmentLoss.textContent = fragmentLoss.toFixed(1)+ 'h';
+    OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
+
+    drawTimeline({P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock});
+  }
+
+  function drawTimeline(data){
+    const W = canvas.width = canvas.clientWidth * (window.devicePixelRatio||1);
+    const H = canvas.height = 340 * (window.devicePixelRatio||1);
+    const scale = W/ (800);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(scale,0,0,scale,0,0);
+    ctx.clearRect(0,0,800,340);
+    ctx.font = '12px system-ui';
+    ctx.lineJoin='round';
+
+    const dayWidth = 760; const left=20; const top=30; const height=180;
+    // timeline frame
+    ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=2; ctx.strokeRect(left, top, dayWidth, height);
+
+    // Build segments heuristic
+    const segments=[];
+    const totalHours=8;
+    // Meetings: distribute
+    for(let m=0;m<data.M;m++) segments.push({type:'meeting', dur:0.5});
+    for(let i=0;i<data.I;i++) segments.push({type:'interrupt', dur:5/60});
+    for(let p=0;p<data.P;p++) segments.push({type:'projectSwitch', dur:0});
+    // Focus filler
+    let filled = segments.reduce((s,x)=>s+x.dur,0);
+    const availableFocus = Math.max(0, data.focusTime);
+    let remainingFocus = availableFocus;
+    while(remainingFocus>0.01 && segments.length<200){
+      const block = Math.min(data.achievableFocusBlock, remainingFocus);
+      segments.push({type:'focus', dur:block});
+      remainingFocus -= block;
+      if(remainingFocus>0.01) segments.push({type:'recovery', dur:data.recoveryTime/Math.max(1,data.M+data.I+Math.max(0,data.P-1))});
+    }
+
+    // Sort by type priority to mix (simple shuffle for visual variety)
+    segments.sort((a,b)=>Math.random()-.5);
+
+    // Convert to positioned bars
+    let cursor=left; const pxPerHour = dayWidth/totalHours;
+    const colored=[]; let focusSum=0, effSum=0; const effFactor = data.effectiveOutput/Math.max(0.01,data.focusTime);
+    segments.forEach(s=>{
+      const w = s.dur*pxPerHour;
+      if(cursor + w > left+dayWidth) return;
+      let color='#90a4ae';
+      if(s.type==='focus'){color='#1e88e5'; focusSum+=s.dur; effSum+=s.dur*effFactor;}
+      else if(s.type==='meeting') color='#ff7043';
+      else if(s.type==='interrupt') color='#ef5350';
+      else if(s.type==='recovery') color='#ab47bc';
+      else if(s.type==='projectSwitch') color='#26a69a';
+      colored.push({x:cursor,y:top+4,w, h:height-8, color, type:s.type, dur:s.dur});
+      cursor+=w;
+    });
+
+    colored.forEach(seg=>{
+      ctx.fillStyle=seg.color;
+      ctx.globalAlpha = seg.type==='focus'?0.95:0.85;
+      ctx.fillRect(seg.x,seg.y,seg.w,seg.h);
+    });
+    ctx.globalAlpha=1;
+
+    // Effective overlay on focus blocks (striped pattern)
+    ctx.save();
+    ctx.globalCompositeOperation='multiply';
+    ctx.fillStyle='rgba(255,255,255,0.18)';
+    colored.filter(s=>s.type==='focus').forEach(seg=>{
+      const effW = seg.w * effFactor;
+      ctx.fillRect(seg.x, seg.y, effW, seg.h);
+    });
+    ctx.restore();
+
+    // Labels
+    ctx.fillStyle='#1e2932';
+    ctx.fillText('Work Day Timeline (ordered representation)', left, top-10);
+    for(let h=0; h<=8; h++){
+      const x = left + h*pxPerHour;
+      ctx.strokeStyle='#e2e8f0'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x, top+height); ctx.lineTo(x, top+height+6); ctx.stroke();
+      ctx.fillStyle='#475569'; ctx.fillText(h+':00', x-10, top+height+20);
+    }
+  }
+
+  inputs.forEach(i=> i.addEventListener('input', calc));
+  window.addEventListener('resize', calc);
+  calc();
+})();
+</script>
+</body>
+</html>
