@@ -263,10 +263,27 @@
         }
 
         .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
+            display: flex;
+            flex-wrap: nowrap; /* stay on a single line */
+            gap: 10px;
             margin-top: 20px;
+            overflow: hidden; /* no scroll */
+        }
+        .stats-grid .stat-card {
+            flex: 1 1 0;
+            min-width: 0; /* allow shrinking */
+            padding: 14px 10px;
+        }
+        /* Responsive typography so six cards fit across narrow viewports */
+        .stat-value { font-size: clamp(1.1rem, 1.8vw, 1.9rem); }
+        .stat-label { font-size: clamp(0.55rem, 0.9vw, 0.75rem); }
+        .stat-card .info-icon { top: 4px; right: 4px; transform: scale(0.9); }
+        .stat-card .metric-tip { width: 200px; }
+        @media (max-width: 560px) {
+            .stats-grid { gap: 6px; }
+            .stats-grid .stat-card { padding: 10px 8px; }
+            .stat-value { font-size: clamp(1rem, 3.3vw, 1.4rem); }
+            .stat-label { font-size: clamp(0.5rem, 1.8vw, 0.65rem); }
         }
 
         .stat-card {
@@ -275,6 +292,7 @@
             border-radius: 10px;
             padding: 20px;
             text-align: center;
+            position: relative;
         }
 
         .stat-value {
@@ -287,6 +305,61 @@
         .stat-label {
             color: #6c757d;
             font-size: 0.9em;
+        }
+
+        /* Metric tooltip styles */
+        .stat-card .info-icon {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 18px;
+            height: 18px;
+            line-height: 18px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: system-ui, Arial, sans-serif;
+            background: #eef2f7;
+            border: 1px solid #c7d0d8;
+            border-radius: 50%;
+            color: #374956;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: default;
+            user-select: none;
+        }
+        .stat-card .metric-tip {
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            transform: translateY(-6px);
+            background: #1e2935;
+            color: #ffffff;
+            padding: 8px 10px;
+            font-size: 12px;
+            line-height: 1.3;
+            width: 220px;
+            max-width: 60vw;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .18s ease, transform .18s ease;
+            z-index: 30;
+        }
+        .stat-card .metric-tip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            right: 10px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: #1e2935 transparent transparent transparent;
+        }
+        .stat-card:hover .metric-tip,
+        .stat-card:focus-within .metric-tip {
+            opacity: 1;
+            transform: translateY(-12px);
         }
     </style>
 </head>
@@ -393,20 +466,40 @@
 
         <div class="stats-grid">
             <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip">Total number of all current connections (internal + cross-team).</div>
                 <div class="stat-value" id="totalConnections">0</div>
                 <div class="stat-label">Total Connections</div>
             </div>
             <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip">Connections whose endpoints are in different teams.</div>
                 <div class="stat-value" id="crossTeamConnections">0</div>
-                <div class="stat-label">Cross-Team Links</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="projectCount">0</div>
                 <div class="stat-label">Active Projects</div>
             </div>
             <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip"><strong>External Dependency Ratio</strong><br>Cross-team links / Total links.</div>
                 <div class="stat-value" id="communicationOverhead">0%</div>
-                <div class="stat-label">Communication Overhead</div>
+                <div class="stat-label">External Dependency Ratio</div>
+            </div>
+            <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip"><strong>Cross-Team Saturation</strong><br>Cross-team links / Maximum possible cross-team links (given team sizes).</div>
+                <div class="stat-value" id="crossTeamSaturation">0%</div>
+                <div class="stat-label">Cross-Team Saturation</div>
+            </div>
+            <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip"><strong>E–I Index</strong><br>(External − Internal) / (External + Internal). Range: -1 (all internal) to +1 (all external).</div>
+                <div class="stat-value" id="eiIndex">0</div>
+                <div class="stat-label">Avg Internal Cohesion</div>
+            </div>
+            <div class="stat-card">
+                <div class="info-icon">i</div>
+                <div class="metric-tip"><strong>External Load / Member</strong><br>Cross-team links / Active members (avg external dependencies per person).</div>
+                <div class="stat-value" id="externalLoad">0</div>
+                <div class="stat-label">External Load / Member</div>
             </div>
         </div>
     </div>
@@ -644,8 +737,9 @@
                 let crossTeamConnections = 0;
                 const connectionCount = {};
                 nodes.forEach(node => connectionCount[node.id] = 0);
-                // Precompute intra-team lines: fully connect all members within each team
+                // Precompute intra-team lines: fully connect all members within each active team & track counts
                 const intraLines = [];
+                const internalEdgesPerTeam = new Array(this.teams.length).fill(0);
                 this.teams.forEach((team, teamIndex) => {
                     if (!team.active) return;
                     const teamNodes = nodes.filter(n => n.team === teamIndex);
@@ -662,6 +756,7 @@
                                 connectionCount[node1.id]++;
                                 connectionCount[node2.id]++;
                                 totalConnections++;
+                                internalEdgesPerTeam[teamIndex]++;
                             }
                         }
                     }
@@ -705,11 +800,39 @@
                 }
                 // Update legend and stats now (before animation completes)
                 this.updateLegend(numProjects);
-                const overhead = totalConnections > 0 ? Math.round((crossTeamConnections / totalConnections) * 100) : 0;
+                // --- Advanced metrics ---
+                const activeTeamsList = this.teams.filter(t => t.active);
+                const totalActiveMembers = activeTeamsList.reduce((s,t)=>s + t.members, 0);
+                // Possible cross-team connections = sum over unordered team pairs of sizeA * sizeB
+                let possibleCross = 0;
+                for (let i=0;i<activeTeamsList.length;i++) {
+                    for (let j=i+1;j<activeTeamsList.length;j++) {
+                        possibleCross += activeTeamsList[i].members * activeTeamsList[j].members;
+                    }
+                }
+                const internalConnections = totalConnections - crossTeamConnections;
+                const externalDependencyRatio = totalConnections>0 ? (crossTeamConnections/totalConnections) : 0; // existing metric
+                const crossTeamSaturation = possibleCross>0 ? (crossTeamConnections/possibleCross) : 0;
+                const eiIndex = (crossTeamConnections + internalConnections) > 0 ? ((crossTeamConnections - internalConnections)/(crossTeamConnections + internalConnections)) : 0;
+                // Cohesion per team
+                const cohesionValues = [];
+                this.teams.forEach((team, idx) => {
+                    if (!team.active) return;
+                    const n = team.members;
+                    const possibleInternal = n*(n-1)/2;
+                    const internalCount = (typeof internalEdgesPerTeam !== 'undefined') ? internalEdgesPerTeam[idx] : 0;
+                    const val = possibleInternal>0 ? internalCount / possibleInternal : 0;
+                    cohesionValues.push(val);
+                });
+                const externalLoadPerMember = totalActiveMembers>0 ? crossTeamConnections/totalActiveMembers : 0;
+
+                const pct = v => Math.round(v*100) + '%';
                 document.getElementById('totalConnections').textContent = totalConnections;
                 document.getElementById('crossTeamConnections').textContent = crossTeamConnections;
-                document.getElementById('projectCount').textContent = numProjects;
-                document.getElementById('communicationOverhead').textContent = overhead + '%';
+                document.getElementById('communicationOverhead').textContent = pct(externalDependencyRatio);
+                const satEl = document.getElementById('crossTeamSaturation'); if (satEl) satEl.textContent = pct(crossTeamSaturation);
+                const eiEl = document.getElementById('eiIndex'); if (eiEl) eiEl.textContent = (Math.round(eiIndex*100)/100).toString();
+                const loadEl = document.getElementById('externalLoad'); if (loadEl) loadEl.textContent = (Math.round(externalLoadPerMember*100)/100).toString();
 
                 const duration = 1400; // ms total
                 const staggerPortion = 0.55; // portion of timeline used to stagger start
