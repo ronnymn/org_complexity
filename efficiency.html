@@ -27,7 +27,7 @@
 .mode-toggle button.active { background:#2962ff; border-color:#2962ff; color:#fff; box-shadow:0 4px 14px -4px rgba(41,98,255,.55); }
 .mode-toggle button:hover:not(.active){ background:#24323d; }
 .week-note { text-align:center; font-size:.7rem; color:#93a2af; margin-top:10px; }
-canvas#weekChart { height:520px; }
+canvas#weekChart { height:760px; }
  .explain { font-size:.85rem; line-height:1.5; color:#334554; }
  .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; }
  .legend span { display:inline-flex; align-items:center; gap:6px; font-size:.7rem; color:#d0d6dd; background:#1c242d; padding:6px 8px 6px 6px; border-radius:20px; }
@@ -38,6 +38,9 @@ canvas#weekChart { height:520px; }
  .inline { display:flex; gap:12px; flex-wrap:wrap; }
  .inline .w50 { flex:1 1 120px; min-width:120px; }
  .slval { color:#0d47a1; background:#e3f2fd; padding:2px 6px; border-radius:10px; font-size:.65rem; margin-left:4px; }
+ .chart-wrap { position:relative; }
+ .cal-tip { position:absolute; pointer-events:none; background:rgba(20,24,28,.95); color:#e7eef5; font-size:.65rem; padding:6px 8px 6px; border-radius:6px; line-height:1.3; box-shadow:0 4px 14px -4px rgba(0,0,0,.5); transform:translate(-50%,-8px); z-index:10; opacity:0; transition:opacity .12s; white-space:nowrap; font-weight:500; border:1px solid #2d3944; }
+ .cal-tip.visible { opacity:1; }
 </style>
 </head>
 <body>
@@ -54,8 +57,8 @@ canvas#weekChart { height:520px; }
           <input id="projects" type="range" min="1" max="8" value="3" />
         </div>
         <div>
-          <label for="meetings">Meetings / Day <span class="slval" id="val_meetings">2</span></label>
-          <input id="meetings" type="range" min="0" max="12" value="2" />
+          <label for="meetings">Meetings / Week <span class="slval" id="val_meetings">2</span></label>
+          <input id="meetings" type="range" min="0" max="28" value="2" />
         </div>
         <div>
           <label for="interrupts">Unplanned Interruptions <span class="slval" id="val_interrupts">5</span></label>
@@ -93,7 +96,8 @@ canvas#weekChart { height:520px; }
     </div>
 
     <div class="chart-wrap">
-      <canvas id="weekChart" width="900" height="520" aria-label="Work week calendar"></canvas>
+  <canvas id="weekChart" width="900" height="760" aria-label="Work week calendar"></canvas>
+  <div id="calTooltip" class="cal-tip"></div>
       <div class="legend" id="legend">
         <span><i style="background:#1e88e5"></i> Focus Blocks</span>
         <span><i style="background:#ff7043"></i> Meetings</span>
@@ -101,6 +105,7 @@ canvas#weekChart { height:520px; }
         <span><i style="background:#ef5350"></i> Interruptions</span>
         <span><i style="background:#26a69a"></i> Effective Output</span>
   <span><i style="background:#ffa000"></i> Lunch</span>
+  <span><i style="background:#ffd54f"></i> Socializing</span>
       </div>
       <div class="week-note" id="weekNote">Mon–Fri 08:00–16:00. Generated schedule is illustrative & heuristic.</div>
     </div>
@@ -118,10 +123,30 @@ canvas#weekChart { height:520px; }
     switchCost: els('m_switchCost'), fragmentLoss: els('m_fragmentLoss'), contextIndex: els('m_contextIndex')
   };
     const weekCanvas = els('weekChart');
+  // Cached randomized weekly meeting distribution
+  let meetingMapCache = null; // {0:[],1:[],2:[],3:[],4:[]}
+  let prevMeetingCount = null;
+  function generateMeetingMap(totalMeetings){
+    const slots = [9.5,10,10.5,11,13,13.5,14,14.5]; // allowed start times
+    const days = [0,1,2,3]; // Mon-Thu only
+    const candidates = [];
+    days.forEach(d=> slots.forEach(s=> candidates.push({day:d,start:s})));
+    // Fisher-Yates shuffle for randomness
+    for(let i=candidates.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [candidates[i],candidates[j]] = [candidates[j],candidates[i]];
+    }
+    const picked = candidates.slice(0, totalMeetings);
+    const map = {0:[],1:[],2:[],3:[],4:[]};
+    picked.forEach(p=> map[p.day].push(p.start));
+    Object.values(map).forEach(arr=> arr.sort((a,b)=>a-b));
+    return map;
+  }
 
-    function calc(){
+  const eventRects = []; // reused per render
+  function calc(){
       const P = parseFloat(els('projects').value);
-      const M = parseFloat(els('meetings').value);
+  const MWeek = parseFloat(els('meetings').value); // weekly meetings
       const I = parseFloat(els('interrupts').value);
       const F = parseFloat(els('focusBlock').value);
       const TS = parseFloat(els('taskSize').value);
@@ -129,11 +154,36 @@ canvas#weekChart { height:520px; }
       const FragPct = parseFloat(els('fragmentPenalty').value)/100;
       const grossDayHours = 8; // includes lunch
       const lunchDur = 0.5; // fixed lunch duration excluded from capacity
-      const nominalHours = grossDayHours - lunchDur;
-      const meetingTime = M * 0.5;
+  const socialDur = 0.25; // 15 min post-lunch socializing
+  const nominalHours = grossDayHours - lunchDur - socialDur; // remove lunch & socializing from productive capacity
+  const meetingsPerDayAvg = MWeek / 5;
+  const meetingTime = meetingsPerDayAvg * 0.5; // each meeting 0.5h, averaged per day
       const interruptActive = I * (5/60);
-      const switches = M + I + Math.max(0, P-1);
-      const recoveryTime = switches * (Rm/60);
+  // Regenerate random meeting map only when meeting count changes
+  if(prevMeetingCount !== MWeek){
+    meetingMapCache = generateMeetingMap(MWeek);
+    prevMeetingCount = MWeek;
+  }
+  // Compute recovery events tied to meetings based on actual randomized distribution
+  const meetingDur = 0.5;
+  const LUNCH_START = 11.5, LUNCH_END = 12;
+  let adjPairs = 0, lunchSupp = 0;
+  for(const d of [0,1,2,3]){
+    const starts = meetingMapCache ? meetingMapCache[d] : [];
+    for(let i=0;i<starts.length;i++){
+      const start = starts[i];
+      const end = start + meetingDur;
+      if(i<starts.length-1 && Math.abs(starts[i+1]-start-meetingDur)<1e-6) adjPairs++;
+      if(Math.abs(end-LUNCH_START)<1e-6 || (end> LUNCH_START && end < LUNCH_END) || Math.abs(end-LUNCH_END)<1e-6) lunchSupp++;
+    }
+  }
+  let effectiveMeetingRecoveriesWeek = MWeek - adjPairs - lunchSupp;
+  if(effectiveMeetingRecoveriesWeek < 0) effectiveMeetingRecoveriesWeek = 0;
+  const meetingRecoveriesPerDayAvg = effectiveMeetingRecoveriesWeek / 5;
+  // Add interruptions + project shift recoveries per day
+  const recoveryEventsDaily = meetingRecoveriesPerDayAvg + I + Math.max(0, P-1);
+  const perEventRecovery = Rm/60;
+  const recoveryTime = recoveryEventsDaily * perEventRecovery;
       const fragmentationFactor = 1 / Math.max(1, Math.pow(P, 0.55));
       const achievableFocusBlock = Math.min(F, TS, F * fragmentationFactor + 0.25);
       let rawFocus = Math.max(0, nominalHours - meetingTime - interruptActive - recoveryTime);
@@ -142,7 +192,7 @@ canvas#weekChart { height:520px; }
       const extraSlices = Math.max(0, forcedBlocks - naturalBlocks);
       const fragmentLoss = extraSlices * 0.05 * achievableFocusBlock * FragPct * 2;
       const focusTime = Math.max(0, rawFocus - fragmentLoss);
-      const contextScatterIndex = Math.min(10, (P * 1.6) + (M*0.35) + (I*0.18));
+  const contextScatterIndex = Math.min(10, (P * 1.6) + (meetingsPerDayAvg*0.35) + (I*0.18));
       const scatterPenalty = 1 - Math.min(0.55, (contextScatterIndex/10)*0.55);
       const effectiveOutput = focusTime * scatterPenalty;
       const switchCost = meetingTime + interruptActive + recoveryTime;
@@ -156,13 +206,13 @@ canvas#weekChart { height:520px; }
   // Update slider labels
   const setTxt = (id,val)=>{ const el=els(id); if(el) el.textContent=val; };
   setTxt('val_projects', P);
-  setTxt('val_meetings', M);
+  setTxt('val_meetings', MWeek);
   setTxt('val_interrupts', I);
   setTxt('val_focusBlock', F.toFixed(1)+'h');
   setTxt('val_taskSize', TS.toFixed(1)+'h');
   setTxt('val_recovery', Rm+'m');
   setTxt('val_fragmentPenalty', Math.round(FragPct*100)+'%');
-      const metrics = {P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock};
+  const metrics = {P,MWeek,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, perEventRecovery};
       drawWeek(metrics);
       requestAnimationFrame(()=>drawWeek(metrics));
       setTimeout(()=>drawWeek(metrics),90);
@@ -170,6 +220,7 @@ canvas#weekChart { height:520px; }
     }
 
   function drawWeek(data){
+    eventRects.length = 0;
     const dpr = window.devicePixelRatio||1;
     // Fallback width if layout not resolved yet
   let logicalWidth = weekCanvas.clientWidth;
@@ -177,17 +228,18 @@ canvas#weekChart { height:520px; }
       logicalWidth = weekCanvas.parentElement ? weekCanvas.parentElement.clientWidth : 900;
       if(!logicalWidth || logicalWidth < 50) logicalWidth = 900; // final fallback
     }
+  const TOTAL_HEIGHT = 760;
   weekCanvas.width = logicalWidth * dpr;
-  weekCanvas.height = 520 * dpr;
+  weekCanvas.height = TOTAL_HEIGHT * dpr;
     const ctxW = weekCanvas.getContext('2d');
     ctxW.setTransform(dpr,0,0,dpr,0,0);
-    ctxW.clearRect(0,0,logicalWidth,520);
-    const margin = {top:30,left:60,right:30,bottom:30};
+  ctxW.clearRect(0,0,logicalWidth,TOTAL_HEIGHT);
+  const margin = {top:30,left:60,right:30,bottom:30};
     const workHours = {start:8,end:16};
     const hourSpan = workHours.end - workHours.start; // 8
     const days = ['Mon','Tue','Wed','Thu','Fri'];
   const gridW = logicalWidth - margin.left - margin.right;
-    const gridH = 460; // drawing area height
+    const gridH = TOTAL_HEIGHT - (margin.top + margin.bottom); // dynamic drawing area height
     const colW = gridW / days.length;
     const hourToY = h => margin.top + ( (h - workHours.start) / hourSpan) * gridH;
     // Background & vertical day columns
@@ -211,23 +263,33 @@ canvas#weekChart { height:520px; }
       ctxW.fillText((h<10?'0':'')+Math.floor(h)+':00', 10, y+4);
     }
   // Build per-day schedule
-    const meetingDur = 0.5; // hours
-    const interruptDur = 5/60; // hours
-    const recoveryDur = (data.recoveryTime / Math.max(1, data.M + data.I + Math.max(0,data.P-1))) || 0; // average per event
-    const usableFocus = data.focusTime; // per day
+  const meetingDur = 0.5; // hours
+  const interruptDur = 5/60; // hours
+  const recoveryDur = data.perEventRecovery || 0; // per-event recovery duration
+  const usableFocus = data.focusTime; // per day
     const achievableBlock = data.achievableFocusBlock;
-  const meetingSlots = [8.5,9,10,11,13,14,15];
-  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000', effective:'#26a69a' };
+  const meetingSlots = [9.5,10,10.5,11,13,13.5,14,14.5];
+  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000', social:'#ffd54f', effective:'#26a69a' };
 
     function scheduleDay(dayIndex){
       let events = [];
-      // Lunch
-      events.push({type:'lunch', start:11.5, end:12});
-      // Meetings + recovery after each
-      for(let m=0; m<data.M; m++) {
-        const start = meetingSlots[(m+dayIndex)%meetingSlots.length];
-        events.push({type:'meeting', start, end:start+meetingDur});
-        events.push({type:'recovery', start:start+meetingDur, end:start+meetingDur+recoveryDur});
+  // Lunch and socializing block
+  events.push({type:'lunch', start:11.5, end:12});
+  events.push({type:'social', start:12, end:12.25});
+      // Meetings distributed Mon-Thu only, none on Fri
+      if(data.MWeek>0 && dayIndex < 4){
+        const mtStartsDay = (data.meetingMap && data.meetingMap[dayIndex]) ? data.meetingMap[dayIndex] : [];
+        for(let i=0;i<mtStartsDay.length;i++){
+          const start = mtStartsDay[i];
+          const end = start + meetingDur;
+          events.push({type:'meeting', start, end});
+          const nextStart = mtStartsDay[i+1];
+          const backToBack = (typeof nextStart==='number') && Math.abs(nextStart - start - meetingDur) < 1e-6;
+          const lunchOverlap = (Math.abs(end - 11.5) < 1e-6) || (end > 11.5 && end < 12) || (Math.abs(end - 12) < 1e-6);
+            if(!backToBack && !lunchOverlap){
+              events.push({type:'recovery', start:end, end:end+recoveryDur});
+            }
+        }
       }
       events.sort((a,b)=>a.start-b.start);
       // Insert focus blocks in gaps
@@ -285,7 +347,7 @@ canvas#weekChart { height:520px; }
       return filled;
     }
   // Draw events with effective overlay
-    let effRemaining = data.effectiveOutput;
+  let effRemaining = data.effectiveOutput;
     days.forEach((d,di)=>{
       const dayEvents = scheduleDay(di);
       const baseX = margin.left + di*colW;
@@ -295,6 +357,7 @@ canvas#weekChart { height:520px; }
         const w = colW - 8;
         const dur = ev.end - ev.start;
         const h = Math.max(4, (dur)/hourSpan * gridH - 2);
+    eventRects.push({x,y,w,h,type:ev.type,start:ev.start,end:ev.end});
         ctxW.fillStyle = palette[ev.type] || '#90a4ae';
         ctxW.globalAlpha = ev.type==='focus'? 0.90 : 0.85;
         ctxW.beginPath();
@@ -329,6 +392,32 @@ canvas#weekChart { height:520px; }
       weekCanvas.dataset.initialized = '1';
     }
   }
+
+  // Hover tooltip
+  const tip = document.getElementById('calTooltip');
+  function fmtTime(t){
+    const hh = Math.floor(t);
+    const mm = Math.round((t - hh)*60);
+    return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+  }
+  weekCanvas.addEventListener('mousemove', e=>{
+    const rect = weekCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = eventRects.find(r=> x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h);
+    if(hit){
+  const labelMap = {focus:'Focus', meeting:'Meeting', interrupt:'Interruption', recovery:'Recovery', lunch:'Lunch', social:'Socializing'};
+      tip.innerHTML = labelMap[hit.type]||hit.type;
+      tip.innerHTML += '<br>'+fmtTime(hit.start)+'–'+fmtTime(hit.end);
+      tip.style.left = x+'px';
+      tip.style.top = y+'px';
+      tip.classList.add('visible');
+    } else {
+      tip.classList.remove('visible');
+    }
+  });
+  weekCanvas.addEventListener('mouseleave',()=> tip.classList.remove('visible'));
 
   inputs.forEach(i=> i.addEventListener('input', calc));
   window.addEventListener('resize', calc);
