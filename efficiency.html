@@ -86,15 +86,6 @@ canvas#weekChart { height:760px; }
       </div>
     </div>
 
-    <div class="grid" id="metrics">
-    <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><div class="weekly" id="m_nominal_w">0h wk</div><small>Hours theoretically available (8h baseline)</small></div>
-  <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><div class="weekly" id="m_focus_w">0h wk</div><small>Estimated deep work hours (raw)</small></div>
-  <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><div class="weekly" id="m_effective_w">0h wk</div><div class="weekly" id="m_loss_w" style="opacity:.85;">Loss 0h wk</div><small id="m_effectiveDetail">Focus × quality factor</small></div>
-  <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><div class="weekly" id="m_util_w">0% wk</div><small>Effective / Nominal</small></div>
-  <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><div class="weekly" id="m_switchCost_w">0h wk</div><small>Meetings + interruptions</small></div>
-    <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><div class="weekly" id="m_contextIndex_w">0 avg</div><small>Higher = more scattered (1–10)</small></div>
-    </div>
-
     <div class="chart-wrap">
   <canvas id="weekChart" width="900" height="760" aria-label="Work week calendar"></canvas>
   <button id="reshuffleBtn" class="shuffle-btn" aria-label="Reshuffle schedule" title="Reshuffle random allocation">↻</button>
@@ -108,6 +99,15 @@ canvas#weekChart { height:760px; }
   <span><i style="background:#ffd54f"></i> Socializing</span>
       </div>
       <div class="week-note" id="weekNote">Mon–Fri 08:00–16:00. Generated schedule is illustrative & heuristic.</div>
+    </div>
+
+    <div class="grid" id="metrics">
+    <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><div class="weekly" id="m_nominal_w">0h wk</div><small>Hours theoretically available (8h baseline)</small></div>
+  <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><div class="weekly" id="m_focus_w">0h wk</div><small>Estimated deep work hours (raw)</small></div>
+  <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><div class="weekly" id="m_effective_w">0h wk</div><div class="weekly" id="m_loss_w" style="opacity:.85;">Loss 0h wk</div><small id="m_effectiveDetail">Focus × quality factor</small></div>
+  <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><div class="weekly" id="m_util_w">0% wk</div><small>Effective / Nominal</small></div>
+  <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><div class="weekly" id="m_switchCost_w">0h wk</div><small>Meetings + interruptions</small></div>
+    <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><div class="weekly" id="m_contextIndex_w">0 avg</div><small>Higher = more scattered (1–10)</small></div>
     </div>
 
     <p class="explain">This model is a simplified illustration. Increasing simultaneous projects raises cognitive load and reduces the average uninterrupted block size. Meetings and interruptions splinter the day, causing recovery overhead. Fragmentation penalty represents subtle productivity decay when tasks are forced into slices smaller than their natural size. Adjust sliders to see impact on effective output and switching losses.</p>
@@ -247,7 +247,7 @@ canvas#weekChart { height:760px; }
     const ctxW = weekCanvas.getContext('2d');
     ctxW.setTransform(dpr,0,0,dpr,0,0);
   ctxW.clearRect(0,0,logicalWidth,TOTAL_HEIGHT);
-  const margin = {top:30,left:60,right:30,bottom:30};
+  const margin = {top:80,left:60,right:30,bottom:30};
     const workHours = {start:8,end:16};
     const hourSpan = workHours.end - workHours.start; // 8
     const days = ['Mon','Tue','Wed','Thu','Fri'];
@@ -263,7 +263,7 @@ canvas#weekChart { height:760px; }
       ctxW.fillRect(x, margin.top, colW, gridH);
       ctxW.fillStyle = '#24323d';
       ctxW.font = '600 13px system-ui';
-      ctxW.fillText(d, x + 8, margin.top - 8);
+  ctxW.fillText(d, x + 8, margin.top - 10);
     });
     // Hour lines
     for(let h=workHours.start; h<=workHours.end; h++){
@@ -582,7 +582,7 @@ canvas#weekChart { height:760px; }
     // Title
     ctxW.fillStyle = '#1e2932';
     ctxW.font = '600 14px system-ui';
-    ctxW.fillText('Weekly Calendar (Simulated)', margin.left, 18);
+  ctxW.fillText('Weekly Calendar (Simulated)', margin.left, 40);
     if(!weekCanvas.dataset.initialized){
       weekCanvas.dataset.initialized = '1';
     }
