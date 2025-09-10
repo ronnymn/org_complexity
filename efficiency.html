@@ -41,6 +41,9 @@ canvas#weekChart { height:760px; }
  .chart-wrap { position:relative; }
  .cal-tip { position:absolute; pointer-events:none; background:rgba(20,24,28,.95); color:#e7eef5; font-size:.65rem; padding:6px 8px 6px; border-radius:6px; line-height:1.3; box-shadow:0 4px 14px -4px rgba(0,0,0,.5); transform:translate(-50%,-8px); z-index:10; opacity:0; transition:opacity .12s; white-space:nowrap; font-weight:500; border:1px solid #2d3944; }
  .cal-tip.visible { opacity:1; }
+ .shuffle-btn { position:absolute; top:8px; right:8px; background:rgba(255,255,255,0.10); border:1px solid #32414c; color:#d2dde7; font-size:11px; padding:4px 8px; border-radius:14px; cursor:pointer; line-height:1; backdrop-filter:blur(4px); letter-spacing:.5px; }
+ .shuffle-btn:hover { background:#2962ff; color:#fff; border-color:#2962ff; }
+ .shuffle-btn:active { transform:translateY(1px); }
 </style>
 </head>
 <body>
@@ -93,6 +96,7 @@ canvas#weekChart { height:760px; }
 
     <div class="chart-wrap">
   <canvas id="weekChart" width="900" height="760" aria-label="Work week calendar"></canvas>
+  <button id="reshuffleBtn" class="shuffle-btn" aria-label="Reshuffle schedule" title="Reshuffle random allocation">↻</button>
   <div id="calTooltip" class="cal-tip"></div>
       <div class="legend" id="legend">
         <span><i style="background:#1e88e5"></i> Focus Blocks</span>
@@ -140,6 +144,7 @@ canvas#weekChart { height:760px; }
 
   const eventRects = []; // reused per render
   let lastInputSignature = '';
+  let focusSeed = Math.floor(Math.random()*1e9);
   function calc(){
       const P = parseFloat(els('projects').value);
   const MWeekBase = parseFloat(els('meetings').value); // base weekly meetings from slider
@@ -163,7 +168,7 @@ canvas#weekChart { height:760px; }
   }
   // Generate a new focus random seed only when inputs change (avoid flicker on multi-pass redraw)
   if(signature !== lastInputSignature){
-    metricsFocusSeed = Math.floor(Math.random()*1e9);
+    focusSeed = Math.floor(Math.random()*1e9);
     lastInputSignature = signature;
   }
   // Achievable focus (no explicit recovery subtraction in Option 3)
@@ -194,7 +199,7 @@ canvas#weekChart { height:760px; }
   setTxt('val_focusBlock', F.toFixed(1)+'h');
   setTxt('val_taskSize', TS.toFixed(1)+'h');
   setTxt('val_recovery', Rm+'m');
-  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed: metricsFocusSeed};
+  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, focusSeed};
       drawWeek(metrics);
       requestAnimationFrame(()=>drawWeek(metrics));
       setTimeout(()=>drawWeek(metrics),90);
@@ -248,7 +253,7 @@ canvas#weekChart { height:760px; }
   const meetingDur = 0.5; // hours
   const interruptDur = 5/60; // hours
   const MIN_FOCUS = 0.25; // 15 minutes minimum focus block length
-  let metricsFocusSeed = 0; // seed set in calc
+  const MIN_INTERRUPT_GAP = 0.5; // require at least 30 minutes of focus between interruptions
   const usableFocus = data.focusTime; // per day (approx evenly assumed)
     const achievableBlock = data.achievableFocusBlock;
   const meetingSlots = [9.5,10,10.5,11,13,13.5,14,14.5];
@@ -330,6 +335,20 @@ canvas#weekChart { height:760px; }
               continue;
             }
           }
+          // Enforce a larger focus gap between interruptions
+          if(lastInterruptEnd > -Infinity){
+            const sinceLast = intStart - lastInterruptEnd;
+            if(sinceLast < MIN_INTERRUPT_GAP){
+              // Try shifting forward inside the block if space allows
+              const needed = MIN_INTERRUPT_GAP - sinceLast;
+              if(intStart + needed + interruptDur <= fb.end){
+                intStart += needed;
+              } else {
+                attempts++; // pick another block
+                continue;
+              }
+            }
+          }
           const intEnd = intStart + interruptDur;
           events = events.filter(e=> e!==fb);
           if(intStart - fb.start >= MIN_FOCUS) events.push({type:'focus', start:fb.start, end:intStart});
@@ -344,18 +363,62 @@ canvas#weekChart { height:760px; }
       events = events.filter(e=> e.start < workHours.end && e.end > workHours.start);
       events.forEach(e=> { e.start = Math.max(e.start, workHours.start); e.end = Math.min(e.end, workHours.end); });
       events.sort((a,b)=> a.start - b.start || a.type.localeCompare(b.type));
-      // Fill any remaining gaps with synthetic focus respecting MIN_FOCUS
+      // Tighten small gaps between interruptions and meetings/lunch/social to avoid tiny visual focus slivers
+      for(let i=0;i<events.length-1;i++){
+        const a = events[i];
+        const b = events[i+1];
+        const gap = b.start - a.end;
+        if(gap > 0 && gap < MIN_FOCUS){
+          // Case: meeting then interruption -> pull interruption earlier
+          if(a.type==='meeting' && b.type==='interrupt'){
+            // shift interruption earlier by gap if it doesn't overlap with previous event
+            const prev = events[i-1];
+            if(!prev || (a.start - prev.end) >= 0){
+              b.start -= gap; b.end -= gap;
+            }
+          } else if(a.type==='interrupt' && b.type==='meeting'){
+            // push interruption forward so it ends exactly at meeting start
+            const prev = events[i-1];
+            const shift = gap;
+            if(!prev || (a.start + shift) >= prev.end){
+              a.start += shift; a.end += shift;
+            }
+          } else if(a.type==='interrupt' && (b.type==='lunch' || b.type==='social')){
+            // push interruption forward to abut lunch/social
+            const prev = events[i-1];
+            const shift = gap;
+            if(!prev || (a.start + shift) >= prev.end){
+              a.start += shift; a.end += shift;
+            }
+          } else if((a.type==='lunch' || a.type==='social') && b.type==='interrupt'){
+            // pull interruption earlier to abut lunch/social end
+            const prev = events[i-1];
+            if(!prev || prev.end <= a.end){
+              b.start -= gap; b.end -= gap;
+            }
+          }
+        }
+      }
+      // Fill any remaining gaps with synthetic focus (allow tiny fillers to avoid visual holes)
       const filled = [];
       let cur = workHours.start;
       for(const ev of events){
         if(ev.start > cur){
           const gapLen = ev.start - cur;
-          if(gapLen >= MIN_FOCUS) filled.push({type:'focus', start:cur, end:ev.start, synthetic:true});
+          if(filled.length && filled[filled.length-1].type==='focus'){
+            // extend previous focus to cover gap
+            filled[filled.length-1].end = ev.start;
+          } else {
+            filled.push({type:'focus', start:cur, end:ev.start, synthetic:true, tiny: gapLen < MIN_FOCUS});
+          }
         }
         filled.push(ev);
         cur = Math.max(cur, ev.end);
       }
-      if(workHours.end - cur >= MIN_FOCUS) filled.push({type:'focus', start:cur, end:workHours.end, synthetic:true});
+      if(workHours.end - cur > 0){
+        if(filled.length && filled[filled.length-1].type==='focus') filled[filled.length-1].end = workHours.end;
+        else filled.push({type:'focus', start:cur, end:workHours.end, synthetic:true});
+      }
 
       // Normalize: merge adjacent focus & remove any residual short fragments < MIN_FOCUS
       filled.sort((a,b)=> a.start - b.start || a.type.localeCompare(b.type));
@@ -370,7 +433,7 @@ canvas#weekChart { height:760px; }
         }
         merged.push(ev);
       }
-      // Filter / adjust tiny focus blocks
+  // Filter / adjust tiny focus blocks (after merging, any remaining sub-min blocks will be merged or kept as part of synthetic filler)
       for(let i=0;i<merged.length;i++){
         const ev = merged[i];
         if(ev.type==='focus' && (ev.end - ev.start) < MIN_FOCUS){
@@ -384,6 +447,30 @@ canvas#weekChart { height:760px; }
             // Cannot merge; drop it (leave small visual gap)
             merged.splice(i,1); i--; continue;
           }
+        }
+      }
+      // Ensure day does not end on an interruption: convert/merge trailing interruption to focus
+      if(merged.length){
+        const last = merged[merged.length-1];
+        if(last.type==='interrupt'){
+          last.type='focus';
+          const prev = merged[merged.length-2];
+          if(prev && prev.type==='focus' && Math.abs(prev.end - last.start) < 1e-6){
+            prev.end = last.end;
+            merged.pop();
+          }
+        }
+      }
+      // Ensure day does not start with an interruption: convert/merge leading interruption to focus
+      if(merged.length){
+        const first = merged[0];
+        if(first.type==='interrupt'){
+          first.type='focus';
+          const next = merged[1];
+            if(next && next.type==='focus' && Math.abs(first.end - next.start) < 1e-6){
+              next.start = first.start;
+              merged.shift();
+            }
         }
       }
       return merged;
@@ -458,6 +545,20 @@ canvas#weekChart { height:760px; }
   });
   weekCanvas.addEventListener('mouseleave',()=> tip.classList.remove('visible'));
 
+  const reshuffleBtn = document.getElementById('reshuffleBtn');
+  if(reshuffleBtn){
+    reshuffleBtn.addEventListener('click', ()=>{
+      // Force new seeds & meeting redistribution
+      const P = parseFloat(els('projects').value);
+      const baseM = parseFloat(els('meetings').value);
+      const totalM = baseM + P;
+      meetingMapCache = generateMeetingMap(totalM);
+      prevMeetingCount = totalM;
+      focusSeed = Math.floor(Math.random()*1e9);
+      lastInputSignature = '';
+      calc();
+    });
+  }
   inputs.forEach(i=> i.addEventListener('input', calc));
   window.addEventListener('resize', calc);
   calc();
