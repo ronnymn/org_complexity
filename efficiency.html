@@ -78,20 +78,16 @@ canvas#weekChart { height:760px; }
           <label for="recovery">Context Recovery (min) <span class="slval" id="val_recovery">12m</span></label>
           <input id="recovery" type="range" min="2" max="45" step="1" value="12" />
         </div>
-        <div class="w50">
-          <label for="fragmentPenalty">Fragmentation Penalty % <span class="slval" id="val_fragmentPenalty">18%</span></label>
-          <input id="fragmentPenalty" type="range" min="0" max="40" step="1" value="18" />
-        </div>
+  <!-- Fragmentation penalty removed (Option B simplification) -->
       </div>
     </div>
 
     <div class="grid" id="metrics">
       <div class="metric"><h3>Nominal Capacity</h3><div class="value" id="m_nominal">0h</div><small>Hours theoretically available (8h baseline)</small></div>
-      <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><small>Estimated deep work hours</small></div>
-      <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><small>Focus time after switching drag</small></div>
-      <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><small>Effective / Nominal</small></div>
-      <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><small>Time lost to project/meeting/task switching</small></div>
-      <div class="metric"><h3>Fragment Loss</h3><div class="value" id="m_fragmentLoss">0h</div><small>Lost due to sub-task fragmentation</small></div>
+  <div class="metric"><h3>Focus Time</h3><div class="value" id="m_focus">0h</div><small>Estimated deep work hours (raw)</small></div>
+  <div class="metric"><h3>Effective Output</h3><div class="value" id="m_effective">0h</div><small id="m_effectiveDetail">Focus × quality factor</small></div>
+  <div class="metric"><h3>Utilization</h3><div class="value" id="m_util">0%</div><small>Effective / Nominal</small></div>
+  <div class="metric"><h3>Switch Cost</h3><div class="value" id="m_switchCost">0h</div><small>Meetings + interruptions</small></div>
       <div class="metric"><h3>Context Index</h3><div class="value" id="m_contextIndex">0</div><small>Higher = more scattered (1–10)</small></div>
     </div>
 
@@ -100,10 +96,9 @@ canvas#weekChart { height:760px; }
   <div id="calTooltip" class="cal-tip"></div>
       <div class="legend" id="legend">
         <span><i style="background:#1e88e5"></i> Focus Blocks</span>
-        <span><i style="background:#ff7043"></i> Meetings</span>
-        <span><i style="background:#ab47bc"></i> Recovery</span>
-        <span><i style="background:#ef5350"></i> Interruptions</span>
-        <span><i style="background:#26a69a"></i> Effective Output</span>
+  <span><i style="background:#ff7043"></i> Meetings</span>
+  <span><i style="background:#ef5350"></i> Interruptions</span>
+  <span><i style="background:#90a4ae"></i> Quality Loss (shaded)</span>
   <span><i style="background:#ffa000"></i> Lunch</span>
   <span><i style="background:#ffd54f"></i> Socializing</span>
       </div>
@@ -117,10 +112,10 @@ canvas#weekChart { height:760px; }
 <script>
 (function(){
   const els = id => document.getElementById(id);
-  const inputs = ['projects','meetings','interrupts','focusBlock','taskSize','recovery','fragmentPenalty'].map(els);
+  const inputs = ['projects','meetings','interrupts','focusBlock','taskSize','recovery'].map(els);
   const OUT = {
     nominal: els('m_nominal'), focus: els('m_focus'), effective: els('m_effective'), util: els('m_util'),
-    switchCost: els('m_switchCost'), fragmentLoss: els('m_fragmentLoss'), contextIndex: els('m_contextIndex')
+    switchCost: els('m_switchCost'), contextIndex: els('m_contextIndex')
   };
     const weekCanvas = els('weekChart');
   // Cached randomized weekly meeting distribution
@@ -146,73 +141,53 @@ canvas#weekChart { height:760px; }
   const eventRects = []; // reused per render
   function calc(){
       const P = parseFloat(els('projects').value);
-  const MWeek = parseFloat(els('meetings').value); // weekly meetings
+  const MWeekBase = parseFloat(els('meetings').value); // base weekly meetings from slider
+      const totalMeetings = MWeekBase + P; // add one extra meeting per project
       const I = parseFloat(els('interrupts').value);
       const F = parseFloat(els('focusBlock').value);
       const TS = parseFloat(els('taskSize').value);
       const Rm = parseFloat(els('recovery').value);
-      const FragPct = parseFloat(els('fragmentPenalty').value)/100;
       const grossDayHours = 8; // includes lunch
       const lunchDur = 0.5; // fixed lunch duration excluded from capacity
   const socialDur = 0.25; // 15 min post-lunch socializing
   const nominalHours = grossDayHours - lunchDur - socialDur; // remove lunch & socializing from productive capacity
-  const meetingsPerDayAvg = MWeek / 5;
+  const meetingsPerDayAvg = totalMeetings / 5;
   const meetingTime = meetingsPerDayAvg * 0.5; // each meeting 0.5h, averaged per day
       const interruptActive = I * (5/60);
   // Regenerate random meeting map only when meeting count changes
-  if(prevMeetingCount !== MWeek){
-    meetingMapCache = generateMeetingMap(MWeek);
-    prevMeetingCount = MWeek;
+  if(prevMeetingCount !== totalMeetings){
+    meetingMapCache = generateMeetingMap(totalMeetings);
+    prevMeetingCount = totalMeetings;
   }
-  // Compute recovery events tied to meetings based on actual randomized distribution
-  const meetingDur = 0.5;
-  const LUNCH_START = 11.5, LUNCH_END = 12;
-  let adjPairs = 0, lunchSupp = 0;
-  for(const d of [0,1,2,3]){
-    const starts = meetingMapCache ? meetingMapCache[d] : [];
-    for(let i=0;i<starts.length;i++){
-      const start = starts[i];
-      const end = start + meetingDur;
-      if(i<starts.length-1 && Math.abs(starts[i+1]-start-meetingDur)<1e-6) adjPairs++;
-      if(Math.abs(end-LUNCH_START)<1e-6 || (end> LUNCH_START && end < LUNCH_END) || Math.abs(end-LUNCH_END)<1e-6) lunchSupp++;
-    }
-  }
-  let effectiveMeetingRecoveriesWeek = MWeek - adjPairs - lunchSupp;
-  if(effectiveMeetingRecoveriesWeek < 0) effectiveMeetingRecoveriesWeek = 0;
-  const meetingRecoveriesPerDayAvg = effectiveMeetingRecoveriesWeek / 5;
-  // Add interruptions + project shift recoveries per day
-  const recoveryEventsDaily = meetingRecoveriesPerDayAvg + I + Math.max(0, P-1);
-  const perEventRecovery = Rm/60;
-  const recoveryTime = recoveryEventsDaily * perEventRecovery;
-      const fragmentationFactor = 1 / Math.max(1, Math.pow(P, 0.55));
-      const achievableFocusBlock = Math.min(F, TS, F * fragmentationFactor + 0.25);
-      let rawFocus = Math.max(0, nominalHours - meetingTime - interruptActive - recoveryTime);
-      const naturalBlocks = rawFocus / TS;
-      const forcedBlocks = rawFocus / achievableFocusBlock;
-      const extraSlices = Math.max(0, forcedBlocks - naturalBlocks);
-      const fragmentLoss = extraSlices * 0.05 * achievableFocusBlock * FragPct * 2;
-      const focusTime = Math.max(0, rawFocus - fragmentLoss);
+  // Achievable focus (no explicit recovery subtraction in Option 3)
+  const achievableFocusBlock = Math.min(F, TS);
+  const focusTime = Math.max(0, nominalHours - meetingTime - interruptActive);
   const contextScatterIndex = Math.min(10, (P * 1.6) + (meetingsPerDayAvg*0.35) + (I*0.18));
-      const scatterPenalty = 1 - Math.min(0.55, (contextScatterIndex/10)*0.55);
-      const effectiveOutput = focusTime * scatterPenalty;
-      const switchCost = meetingTime + interruptActive + recoveryTime;
+  // Quality factor integrates switching severity (Rm) instead of explicit recovery blocks.
+  const severityBoost = (Rm/45)*2.0; // up to +2 index units
+  const combinedIndex = Math.min(12, contextScatterIndex + severityBoost);
+  const qualityPenalty = Math.min(0.6, (combinedIndex/12)*0.6); // up to 60%
+  const qualityFactor = 1 - qualityPenalty; // 1..0.4
+  const effectiveOutput = focusTime * qualityFactor;
+  const switchCost = meetingTime + interruptActive; // explicit time losses only
       OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
-      OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
-      OUT.effective.textContent = effectiveOutput.toFixed(1)+ 'h';
-      OUT.util.textContent = Math.round((effectiveOutput/nominalHours)*100)+'%';
-      OUT.switchCost.textContent = switchCost.toFixed(1)+'h';
-      OUT.fragmentLoss.textContent = fragmentLoss.toFixed(1)+'h';
-      OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
+    OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
+  OUT.effective.textContent = effectiveOutput.toFixed(1)+'h';
+  OUT.util.textContent = Math.round((effectiveOutput/nominalHours)*100)+'%';
+  OUT.switchCost.textContent = switchCost.toFixed(1)+'h';
+  OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
+  const loss = focusTime - effectiveOutput;
+  const effDet = els('m_effectiveDetail');
+  if(effDet) effDet.textContent = qualityFactor.toFixed(2)+'x (loss '+loss.toFixed(1)+'h)';
   // Update slider labels
   const setTxt = (id,val)=>{ const el=els(id); if(el) el.textContent=val; };
   setTxt('val_projects', P);
-  setTxt('val_meetings', MWeek);
+  setTxt('val_meetings', MWeekBase + ' (+'+P+'='+ totalMeetings +')');
   setTxt('val_interrupts', I);
   setTxt('val_focusBlock', F.toFixed(1)+'h');
   setTxt('val_taskSize', TS.toFixed(1)+'h');
   setTxt('val_recovery', Rm+'m');
-  setTxt('val_fragmentPenalty', Math.round(FragPct*100)+'%');
-  const metrics = {P,MWeek,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache, perEventRecovery};
+  const metrics = {P,MWeekBase,totalMeetings,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,achievableFocusBlock, meetingsPerDayAvg, meetingMap: meetingMapCache};
       drawWeek(metrics);
       requestAnimationFrame(()=>drawWeek(metrics));
       setTimeout(()=>drawWeek(metrics),90);
@@ -265,11 +240,10 @@ canvas#weekChart { height:760px; }
   // Build per-day schedule
   const meetingDur = 0.5; // hours
   const interruptDur = 5/60; // hours
-  const recoveryDur = data.perEventRecovery || 0; // per-event recovery duration
-  const usableFocus = data.focusTime; // per day
+  const usableFocus = data.focusTime; // per day (approx evenly assumed)
     const achievableBlock = data.achievableFocusBlock;
   const meetingSlots = [9.5,10,10.5,11,13,13.5,14,14.5];
-  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000', social:'#ffd54f', effective:'#26a69a' };
+  const palette = { focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', project:'#26a69a', lunch:'#ffa000', social:'#ffd54f', loss:'#90a4ae' };
 
     function scheduleDay(dayIndex){
       let events = [];
@@ -277,19 +251,9 @@ canvas#weekChart { height:760px; }
   events.push({type:'lunch', start:11.5, end:12});
   events.push({type:'social', start:12, end:12.25});
       // Meetings distributed Mon-Thu only, none on Fri
-      if(data.MWeek>0 && dayIndex < 4){
+      if(data.totalMeetings>0 && dayIndex < 4){
         const mtStartsDay = (data.meetingMap && data.meetingMap[dayIndex]) ? data.meetingMap[dayIndex] : [];
-        for(let i=0;i<mtStartsDay.length;i++){
-          const start = mtStartsDay[i];
-          const end = start + meetingDur;
-          events.push({type:'meeting', start, end});
-          const nextStart = mtStartsDay[i+1];
-          const backToBack = (typeof nextStart==='number') && Math.abs(nextStart - start - meetingDur) < 1e-6;
-          const lunchOverlap = (Math.abs(end - 11.5) < 1e-6) || (end > 11.5 && end < 12) || (Math.abs(end - 12) < 1e-6);
-            if(!backToBack && !lunchOverlap){
-              events.push({type:'recovery', start:end, end:end+recoveryDur});
-            }
-        }
+        mtStartsDay.forEach(start=> events.push({type:'meeting', start, end:start+meetingDur}));
       }
       events.sort((a,b)=>a.start-b.start);
       // Insert focus blocks in gaps
@@ -302,10 +266,6 @@ canvas#weekChart { height:760px; }
           events.push({type:'focus', start:pointer, end:maxEnd});
           remainingFocus -= (maxEnd - pointer);
           pointer = maxEnd;
-          if(remainingFocus>0.05 && pointer < gapEnd){
-            const recEnd = Math.min(gapEnd, pointer + recoveryDur*0.4);
-            if(recEnd - pointer > 0.03){ events.push({type:'recovery', start:pointer, end:recEnd}); pointer = recEnd; }
-          }
         }
       };
       events.forEach(ev=>{ if(pointer < ev.start) pushFocus(ev.start); pointer = Math.max(pointer, ev.end); });
@@ -321,12 +281,7 @@ canvas#weekChart { height:760px; }
         events = events.filter(e=> e!==fb);
         if(intStart - fb.start > 0.04) events.push({type:'focus', start:fb.start, end:intStart});
         events.push({type:'interrupt', start:intStart, end:intEnd});
-        if(intEnd + recoveryDur < fb.end){
-          events.push({type:'recovery', start:intEnd, end:Math.min(fb.end, intEnd+recoveryDur)});
-          if(fb.end - (intEnd+recoveryDur) > 0.05) events.push({type:'focus', start:intEnd+recoveryDur, end:fb.end});
-        } else if(fb.end - intEnd > 0.04){
-          events.push({type:'focus', start:intEnd, end:fb.end});
-        }
+        if(fb.end - intEnd > 0.04) events.push({type:'focus', start:intEnd, end:fb.end});
         focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
       }
       // Clip & sort
@@ -347,7 +302,6 @@ canvas#weekChart { height:760px; }
       return filled;
     }
   // Draw events with effective overlay
-  let effRemaining = data.effectiveOutput;
     days.forEach((d,di)=>{
       const dayEvents = scheduleDay(di);
       const baseX = margin.left + di*colW;
@@ -358,25 +312,23 @@ canvas#weekChart { height:760px; }
         const dur = ev.end - ev.start;
         const h = Math.max(4, (dur)/hourSpan * gridH - 2);
     eventRects.push({x,y,w,h,type:ev.type,start:ev.start,end:ev.end});
-        ctxW.fillStyle = palette[ev.type] || '#90a4ae';
+  ctxW.fillStyle = palette[ev.type] || '#90a4ae';
         ctxW.globalAlpha = ev.type==='focus'? 0.90 : 0.85;
         ctxW.beginPath();
         ctxW.roundRect ? ctxW.roundRect(x,y,w,h,6) : ctxW.fillRect(x,y,w,h);
         ctxW.fill();
         ctxW.globalAlpha = 1;
-        if(ev.type==='focus' && effRemaining > 0){
-          const effChunk = Math.min(dur, effRemaining);
-          const ratio = effChunk / dur;
-          const effH = Math.max(3, h * ratio - 2);
-          const inset = 4;
-            ctxW.fillStyle = palette.effective;
-            ctxW.globalAlpha = 0.85;
-            const yEff = y + (h - effH)/2;
+        if(ev.type==='focus'){
+          const lostRatio = (data.focusTime>0)? Math.max(0,(data.focusTime - data.effectiveOutput)/data.focusTime):0;
+          if(lostRatio>0){
+            const lostH = Math.max(2, h * lostRatio);
+            ctxW.fillStyle = palette.loss;
+            ctxW.globalAlpha = 0.55;
             ctxW.beginPath();
-            ctxW.roundRect ? ctxW.roundRect(x+inset,yEff,w-inset*2,effH,4) : ctxW.fillRect(x+inset,yEff,w-inset*2,effH);
+            ctxW.roundRect ? ctxW.roundRect(x+1,y+1,w-2,lostH,4) : ctxW.fillRect(x+1,y+1,w-2,lostH);
             ctxW.fill();
             ctxW.globalAlpha = 1;
-            effRemaining -= effChunk;
+          }
         }
         ctxW.fillStyle = '#ffffff';
         ctxW.font = '600 10px system-ui';
@@ -407,7 +359,7 @@ canvas#weekChart { height:760px; }
     const y = e.clientY - rect.top;
     const hit = eventRects.find(r=> x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h);
     if(hit){
-  const labelMap = {focus:'Focus', meeting:'Meeting', interrupt:'Interruption', recovery:'Recovery', lunch:'Lunch', social:'Socializing'};
+  const labelMap = {focus:'Focus', meeting:'Meeting', interrupt:'Interruption', lunch:'Lunch', social:'Socializing'};
       tip.innerHTML = labelMap[hit.type]||hit.type;
       tip.innerHTML += '<br>'+fmtTime(hit.start)+'–'+fmtTime(hit.end);
       tip.style.left = x+'px';
