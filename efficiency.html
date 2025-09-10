@@ -473,6 +473,26 @@ canvas#weekChart { height:760px; }
             }
         }
       }
+      // Guarantee full-day coverage with focus at start and end (no visible gaps)
+      if(merged.length){
+        if(merged[0].start > workHours.start){
+          if(merged[0].type==='focus') merged[0].start = workHours.start;
+          else merged.unshift({type:'focus', start:workHours.start, end:merged[0].start, synthetic:true});
+        }
+        if(merged[merged.length-1].end < workHours.end){
+          const last = merged[merged.length-1];
+            if(last.type==='focus') last.end = workHours.end;
+            else merged.push({type:'focus', start:last.end, end:workHours.end, synthetic:true});
+        }
+        // Merge any newly adjacent focus blocks
+        for(let i=1;i<merged.length;i++){
+          const prev = merged[i-1];
+          const cur = merged[i];
+          if(prev.type==='focus' && cur.type==='focus' && Math.abs(prev.end - cur.start) < 1e-6){
+            prev.end = cur.end; merged.splice(i,1); i--; continue;
+          }
+        }
+      }
       return merged;
     }
   // Draw events with effective overlay
