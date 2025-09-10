@@ -218,22 +218,66 @@
             <div class="team-card">
                 <div class="team-color" style="background: #3498db;"></div>
                 <h3>A-Team</h3>
-                <div class="team-members">4 members</div>
+                <div class="team-members">
+                    <select id="teamSizeA" style="width:55px; text-align:center;">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4" selected>4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                    </select> members
+                </div>
             </div>
             <div class="team-card">
                 <div class="team-color" style="background: #e74c3c;"></div>
                 <h3>B-Team</h3>
-                <div class="team-members">4 members</div>
+                <div class="team-members">
+                    <select id="teamSizeB" style="width:55px; text-align:center;">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4" selected>4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                    </select> members
+                </div>
             </div>
             <div class="team-card">
                 <div class="team-color" style="background: #f39c12;"></div>
                 <h3>C-Team</h3>
-                <div class="team-members">3 members</div>
+                <div class="team-members">
+                    <select id="teamSizeC" style="width:55px; text-align:center;">
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                    </select> members
+                </div>
             </div>
             <div class="team-card">
                 <div class="team-color" style="background: #2ecc71;"></div>
                 <h3>D-Team</h3>
-                <div class="team-members">3 members</div>
+                <div class="team-members">
+                    <select id="teamSizeD" style="width:55px; text-align:center;">
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                    </select> members
+                </div>
             </div>
         </div>
 
@@ -285,16 +329,15 @@
     <script>
         class NetworkVisualizer {
             constructor() {
+                this.teamDefaults = [4, 4, 3, 3];
                 this.teams = [
                     { name: 'A-Team', members: 4, color: '#3498db', position: { x: 200, y: 150 } },
                     { name: 'B-Team', members: 4, color: '#e74c3c', position: { x: 700, y: 150 } },
                     { name: 'C-Team', members: 3, color: '#f39c12', position: { x: 200, y: 450 } },
                     { name: 'D-Team', members: 3, color: '#2ecc71', position: { x: 700, y: 450 } }
                 ];
-                
                 this.projectColors = ['#9b59b6', '#ff6b35', '#1dd1a1', '#feca57'];
                 this.projectNames = ['Alpha', 'Beta', 'Gamma', 'Delta'];
-                
                 this.initializeControls();
                 this.render();
                 window.addEventListener('resize', () => this.render());
@@ -322,7 +365,22 @@
                         this.render();
                     });
                 }
-                
+                // Team size controls inside team cards
+                const teamInputs = [
+                    document.getElementById('teamSizeA'),
+                    document.getElementById('teamSizeB'),
+                    document.getElementById('teamSizeC'),
+                    document.getElementById('teamSizeD')
+                ];
+                teamInputs.forEach((input, idx) => {
+                    input.addEventListener('change', (e) => {
+                        let val = parseInt(e.target.value);
+                        if (isNaN(val) || val < 2) val = 2;
+                        if (val > 9) val = 9;
+                        this.teams[idx].members = val;
+                        this.render();
+                    });
+                });
                 this.updateDescription(2);
             }
 
@@ -354,6 +412,14 @@
                         });
                     }
                 });
+                // Update member count display in team cards
+                if (this.teamMembersSpans) {
+                    this.teams.forEach((team, idx) => {
+                        if (this.teamMembersSpans[idx]) {
+                            this.teamMembersSpans[idx].textContent = team.members;
+                        }
+                    });
+                }
                 return nodes;
             }
 
