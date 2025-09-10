@@ -74,11 +74,33 @@
             border-radius: 10px;
             padding: 15px;
             text-align: center;
+            position: relative;
+            transition: opacity 0.3s, background 0.3s;
         }
 
         .team-card h3 {
             margin: 0 0 5px 0;
             color: #2c3e50;
+        }
+
+        .team-card.inactive {
+            opacity: 0.45;
+            background: #eceff1;
+        }
+
+        .team-toggle-wrapper {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            color: #555;
+        }
+        .team-toggle-wrapper input {
+            margin: 0;
         }
 
         .team-members {
@@ -215,7 +237,8 @@
         <p class="subtitle">How multiple projects create overlapping cross-team dependencies</p>
 
         <div class="team-overview">
-            <div class="team-card">
+            <div class="team-card" data-team="0">
+                <div class="team-toggle-wrapper"><input type="checkbox" class="team-toggle" data-team="0" checked><span>On</span></div>
                 <div class="team-color" style="background: #3498db;"></div>
                 <h3>A-Team</h3>
                 <div class="team-members">
@@ -231,7 +254,8 @@
                     </select> members
                 </div>
             </div>
-            <div class="team-card">
+            <div class="team-card" data-team="1">
+                <div class="team-toggle-wrapper"><input type="checkbox" class="team-toggle" data-team="1" checked><span>On</span></div>
                 <div class="team-color" style="background: #e74c3c;"></div>
                 <h3>B-Team</h3>
                 <div class="team-members">
@@ -247,7 +271,8 @@
                     </select> members
                 </div>
             </div>
-            <div class="team-card">
+            <div class="team-card" data-team="2">
+                <div class="team-toggle-wrapper"><input type="checkbox" class="team-toggle" data-team="2" checked><span>On</span></div>
                 <div class="team-color" style="background: #f39c12;"></div>
                 <h3>C-Team</h3>
                 <div class="team-members">
@@ -263,7 +288,8 @@
                     </select> members
                 </div>
             </div>
-            <div class="team-card">
+            <div class="team-card" data-team="3">
+                <div class="team-toggle-wrapper"><input type="checkbox" class="team-toggle" data-team="3" checked><span>On</span></div>
                 <div class="team-color" style="background: #2ecc71;"></div>
                 <h3>D-Team</h3>
                 <div class="team-members">
@@ -331,10 +357,10 @@
             constructor() {
                 this.teamDefaults = [4, 4, 3, 3];
                 this.teams = [
-                    { name: 'A-Team', members: 4, color: '#3498db', position: { x: 200, y: 150 } },
-                    { name: 'B-Team', members: 4, color: '#e74c3c', position: { x: 700, y: 150 } },
-                    { name: 'C-Team', members: 3, color: '#f39c12', position: { x: 200, y: 450 } },
-                    { name: 'D-Team', members: 3, color: '#2ecc71', position: { x: 700, y: 450 } }
+                    { name: 'A-Team', members: 4, color: '#3498db', position: { x: 200, y: 150 }, active: true },
+                    { name: 'B-Team', members: 4, color: '#e74c3c', position: { x: 700, y: 150 }, active: true },
+                    { name: 'C-Team', members: 3, color: '#f39c12', position: { x: 200, y: 450 }, active: true },
+                    { name: 'D-Team', members: 3, color: '#2ecc71', position: { x: 700, y: 450 }, active: true }
                 ];
                 this.projectColors = ['#9b59b6', '#ff6b35', '#1dd1a1', '#feca57'];
                 this.projectNames = ['Alpha', 'Beta', 'Gamma', 'Delta'];
@@ -381,6 +407,27 @@
                         this.render();
                     });
                 });
+                // Team toggle checkboxes
+                document.querySelectorAll('.team-toggle').forEach(cb => {
+                    cb.addEventListener('change', (e) => {
+                        const idx = parseInt(e.target.getAttribute('data-team'));
+                        const team = this.teams[idx];
+                        team.active = e.target.checked;
+                        const card = document.querySelector(`.team-card[data-team="${idx}"]`);
+                        if (card) {
+                            if (team.active) {
+                                card.classList.remove('inactive');
+                                card.querySelector('select').disabled = false;
+                                card.querySelector('.team-toggle-wrapper span').textContent = 'On';
+                            } else {
+                                card.classList.add('inactive');
+                                card.querySelector('select').disabled = true;
+                                card.querySelector('.team-toggle-wrapper span').textContent = 'Off';
+                            }
+                        }
+                        this.render();
+                    });
+                });
                 this.updateDescription(2);
             }
 
@@ -398,6 +445,7 @@
                 const nodes = [];
                 let id = 0;
                 this.teams.forEach((team, teamIndex) => {
+                    if (!team.active) return; // Skip inactive teams
                     for (let i = 0; i < team.members; i++) {
                         const angle = (i / team.members) * 2 * Math.PI;
                         const radius = (50 + Math.random() * 25) * scale;
@@ -469,6 +517,7 @@
                 // Precompute intra-team lines: fully connect all members within each team
                 const intraLines = [];
                 this.teams.forEach((team, teamIndex) => {
+                    if (!team.active) return;
                     const teamNodes = nodes.filter(n => n.team === teamIndex);
                     if (teamNodes.length > 1) {
                         for (let i = 0; i < teamNodes.length; i++) {
@@ -488,7 +537,7 @@
                     }
                 });
                 // Build curves for animation instead of drawing immediately
-                const teamPairs = [[0,1], [0,2], [0,3], [1,2], [1,3], [2,3]];
+                const teamPairs = [[0,1], [0,2], [0,3], [1,2], [1,3], [2,3]].filter(([a,b]) => this.teams[a].active && this.teams[b].active);
                 const curves = [];
                 for (let projectIndex = 0; projectIndex < numProjects; projectIndex++) {
                     const projectColor = this.projectColors[projectIndex];
@@ -545,6 +594,7 @@
                     ctx.clearRect(0, 0, maxWidth, maxHeight);
                     // Team boundaries
                     this.teams.forEach(team => {
+                        if (!team.active) return;
                         ctx.strokeStyle = team.color;
                         ctx.setLineDash([8, 4]);
                         ctx.lineWidth = 3;
