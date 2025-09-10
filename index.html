@@ -76,11 +76,10 @@
             background: #f8f9fa;
             border: 2px solid #e9ecef;
             border-radius: 10px;
-            padding: 15px;
+            padding: 10px 12px 12px 12px; /* reduced padding */
             text-align: center;
             position: relative;
             transition: opacity 0.25s, background 0.25s, filter 0.25s;
-            min-height: 160px;
             box-sizing: border-box;
             cursor: pointer;
         }
@@ -416,11 +415,17 @@
         class NetworkVisualizer {
             constructor() {
                 this.teamDefaults = [4, 4, 3, 3];
+                this.defaultPositions = [
+                    { x: 200, y: 150 },
+                    { x: 700, y: 150 },
+                    { x: 200, y: 450 },
+                    { x: 700, y: 450 }
+                ];
                 this.teams = [
-                    { name: 'A-Team', members: 4, color: '#3498db', position: { x: 200, y: 150 }, active: true },
-                    { name: 'B-Team', members: 4, color: '#e74c3c', position: { x: 700, y: 150 }, active: true },
-                    { name: 'C-Team', members: 3, color: '#f39c12', position: { x: 200, y: 450 }, active: true },
-                    { name: 'D-Team', members: 3, color: '#2ecc71', position: { x: 700, y: 450 }, active: true }
+                    { name: 'A-Team', members: 4, color: '#3498db', position: { ...this.defaultPositions[0] }, active: true },
+                    { name: 'B-Team', members: 4, color: '#e74c3c', position: { ...this.defaultPositions[1] }, active: true },
+                    { name: 'C-Team', members: 3, color: '#f39c12', position: { ...this.defaultPositions[2] }, active: true },
+                    { name: 'D-Team', members: 3, color: '#2ecc71', position: { ...this.defaultPositions[3] }, active: true }
                 ];
                 this.projectColors = ['#9b59b6', '#ff6b35', '#1dd1a1', '#feca57'];
                 this.projectNames = ['Alpha', 'Beta', 'Gamma', 'Delta'];
@@ -516,6 +521,44 @@
                 this.updateDescription(2);
             }
 
+            adjustTeamLayout() {
+                const activeTeams = this.teams.filter(t => t.active);
+                const count = activeTeams.length;
+                // Logical canvas size reference
+                const W = 900, H = 650;
+                let positions = [];
+                if (count === 1) {
+                    positions = [{ x: W/2, y: H/2 }];
+                } else if (count === 2) {
+                    positions = [
+                        { x: W * 0.33, y: H/2 },
+                        { x: W * 0.66, y: H/2 }
+                    ];
+                } else if (count === 3) {
+                    positions = [
+                        { x: W/2, y: H*0.30 },
+                        { x: W*0.30, y: H*0.65 },
+                        { x: W*0.70, y: H*0.65 }
+                    ];
+                } else { // 4 or more (default grid first 4)
+                    positions = [
+                        { x: W*0.25, y: H*0.28 },
+                        { x: W*0.75, y: H*0.28 },
+                        { x: W*0.25, y: H*0.72 },
+                        { x: W*0.75, y: H*0.72 }
+                    ];
+                }
+                // Map back to teams in active order
+                let idx = 0;
+                this.teams.forEach(t => {
+                    if (t.active) {
+                        t.position.x = positions[idx].x;
+                        t.position.y = positions[idx].y;
+                        idx++;
+                    }
+                });
+            }
+
             updateDescription(numProjects) {
                 const desc = document.getElementById('projectDescription');
                 if (numProjects === 0) {
@@ -594,6 +637,8 @@
                 ctx.clearRect(0, 0, maxWidth, maxHeight);
                 const numProjects = parseInt(document.getElementById('crossTeamProjects').value);
                 const connectionsPerProject = parseInt(document.getElementById('connectionsPerProject')?.value || 2);
+                // Adjust team layout based on active teams before generating nodes
+                this.adjustTeamLayout();
                 const nodes = this.generateNodes(1); // Use scale=1, transform handles scaling
                 let totalConnections = 0;
                 let crossTeamConnections = 0;
@@ -678,6 +723,8 @@
                     // Clear and redraw static elements each frame (cheap for current scale)
                     ctx.clearRect(0, 0, maxWidth, maxHeight);
                     // Team boundaries
+                    const activeCount = this.teams.filter(t=>t.active).length;
+                    const baseRadius = activeCount === 1 ? 140 : activeCount === 2 ? 120 : activeCount === 3 ? 100 : 85;
                     this.teams.forEach(team => {
                         if (!team.active) return;
                         ctx.strokeStyle = team.color;
@@ -685,13 +732,13 @@
                         ctx.lineWidth = 3;
                         ctx.globalAlpha = 0.7;
                         ctx.beginPath();
-                        ctx.arc(team.position.x, team.position.y, 85, 0, 2 * Math.PI);
+                        ctx.arc(team.position.x, team.position.y, baseRadius, 0, 2 * Math.PI);
                         ctx.stroke();
                         ctx.fillStyle = team.color;
                         ctx.font = 'bold 18px Arial';
                         ctx.textAlign = 'center';
                         ctx.globalAlpha = 0.9;
-                        ctx.fillText(team.name, team.position.x, team.position.y - 110);
+                        ctx.fillText(team.name, team.position.x, team.position.y - (baseRadius + 25));
                     });
                     ctx.setLineDash([]);
                     ctx.globalAlpha = 1.0;
