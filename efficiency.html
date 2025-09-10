@@ -22,6 +22,12 @@
  .metric small { display:block; font-size:.65rem; color:#607283; margin-top:2px; }
  .chart-wrap { margin-top:30px; background:#0d1117; padding:26px 22px 32px; border-radius:18px; box-shadow:0 10px 28px -8px rgba(0,0,0,.55); }
  canvas { width:100%; height:340px; display:block; background:#fff; border-radius:10px; box-shadow:0 0 0 1px #e2e8f0; }
+.mode-toggle { display:flex; gap:10px; justify-content:center; margin-bottom:18px; flex-wrap:wrap; }
+.mode-toggle button { background:#1e2932; color:#e2f1ff; border:1px solid #32414c; padding:8px 16px; border-radius:30px; cursor:pointer; font-size:.8rem; letter-spacing:.5px; font-weight:600; text-transform:uppercase; transition:.18s background,.18s color; }
+.mode-toggle button.active { background:#2962ff; border-color:#2962ff; color:#fff; box-shadow:0 4px 14px -4px rgba(41,98,255,.55); }
+.mode-toggle button:hover:not(.active){ background:#24323d; }
+.week-note { text-align:center; font-size:.7rem; color:#93a2af; margin-top:10px; }
+canvas#weekChart { height:520px; }
  .explain { font-size:.85rem; line-height:1.5; color:#334554; }
  .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; }
  .legend span { display:inline-flex; align-items:center; gap:6px; font-size:.7rem; color:#d0d6dd; background:#1c242d; padding:6px 8px 6px 6px; border-radius:20px; }
@@ -86,14 +92,16 @@
     </div>
 
     <div class="chart-wrap">
-      <canvas id="effChart" width="900" height="340"></canvas>
+      <canvas id="weekChart" width="900" height="520" aria-label="Work week calendar"></canvas>
       <div class="legend" id="legend">
         <span><i style="background:#1e88e5"></i> Focus Blocks</span>
         <span><i style="background:#ff7043"></i> Meetings</span>
         <span><i style="background:#ab47bc"></i> Recovery</span>
         <span><i style="background:#ef5350"></i> Interruptions</span>
         <span><i style="background:#26a69a"></i> Effective Output</span>
+  <span><i style="background:#ffa000"></i> Lunch</span>
       </div>
+      <div class="week-note" id="weekNote">Mon–Fri 08:00–16:00. Generated schedule is illustrative & heuristic.</div>
     </div>
 
     <p class="explain">This model is a simplified illustration. Increasing simultaneous projects raises cognitive load and reduces the average uninterrupted block size. Meetings and interruptions splinter the day, causing recovery overhead. Fragmentation penalty represents subtle productivity decay when tasks are forced into slices smaller than their natural size. Adjust sliders to see impact on effective output and switching losses.</p>
@@ -108,135 +116,184 @@
     nominal: els('m_nominal'), focus: els('m_focus'), effective: els('m_effective'), util: els('m_util'),
     switchCost: els('m_switchCost'), fragmentLoss: els('m_fragmentLoss'), contextIndex: els('m_contextIndex')
   };
-  const canvas = els('effChart');
-  const ctx = canvas.getContext('2d');
+    const weekCanvas = els('weekChart');
 
-  function calc(){
-    const P = parseFloat(els('projects').value); // projects
-    const M = parseFloat(els('meetings').value); // meetings
-    const I = parseFloat(els('interrupts').value); // interruptions
-    const F = parseFloat(els('focusBlock').value); // max focus block
-    const TS = parseFloat(els('taskSize').value); // avg task size
-    const Rm = parseFloat(els('recovery').value); // recovery minutes
-    const FragPct = parseFloat(els('fragmentPenalty').value)/100; // penalty
-
-    const nominalHours = 8; // baseline day
-    // Meeting time assumption: 30 min per meeting average
-    const meetingTime = M * 0.5; // hours
-    // Interrupt direct time cost (assume 5 min each) + recovery each
-    const interruptActive = I * (5/60); // hours direct
-    const switches = M + I + Math.max(0, P-1); // events causing recovery
-    const recoveryTime = switches * (Rm/60);
-
-    // Project fragmentation cost: more projects reduce effective max block
-    const fragmentationFactor = 1 / Math.max(1, Math.pow(P, 0.55));
-    const achievableFocusBlock = Math.min(F, TS, F * fragmentationFactor + 0.25);
-
-    // Raw focus capacity after subtracting fixed costs
-    let rawFocus = nominalHours - meetingTime - interruptActive - recoveryTime;
-    rawFocus = Math.max(0, rawFocus);
-
-    // Fragmentation loss: portion of tasks forced smaller than natural size
-    const naturalBlocks = rawFocus / TS;
-    const forcedBlocks = rawFocus / achievableFocusBlock;
-    const extraSlices = Math.max(0, forcedBlocks - naturalBlocks);
-    const fragmentLoss = extraSlices * 0.05 * achievableFocusBlock * FragPct * 2; // scaled heuristic
-
-    const focusTime = Math.max(0, rawFocus - fragmentLoss);
-
-    // Switching cognitive tax reduces effective output (nonlinear with P)
-    const contextScatterIndex = Math.min(10, (P * 1.6) + (M*0.35) + (I*0.18));
-    const scatterPenalty = 1 - Math.min(0.55, (contextScatterIndex/10)*0.55); // cap at 55%
-    const effectiveOutput = focusTime * scatterPenalty;
-
-    const switchCost = meetingTime + interruptActive + recoveryTime;
-
-    OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
-    OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
-    OUT.effective.textContent = effectiveOutput.toFixed(1)+ 'h';
-    OUT.util.textContent = nominalHours>0 ? Math.round((effectiveOutput/nominalHours)*100)+'%' : '0%';
-    OUT.switchCost.textContent = switchCost.toFixed(1)+ 'h';
-    OUT.fragmentLoss.textContent = fragmentLoss.toFixed(1)+ 'h';
-    OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
-
-    drawTimeline({P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock});
-  }
-
-  function drawTimeline(data){
-    const W = canvas.width = canvas.clientWidth * (window.devicePixelRatio||1);
-    const H = canvas.height = 340 * (window.devicePixelRatio||1);
-    const scale = W/ (800);
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(scale,0,0,scale,0,0);
-    ctx.clearRect(0,0,800,340);
-    ctx.font = '12px system-ui';
-    ctx.lineJoin='round';
-
-    const dayWidth = 760; const left=20; const top=30; const height=180;
-    // timeline frame
-    ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=2; ctx.strokeRect(left, top, dayWidth, height);
-
-    // Build segments heuristic
-    const segments=[];
-    const totalHours=8;
-    // Meetings: distribute
-    for(let m=0;m<data.M;m++) segments.push({type:'meeting', dur:0.5});
-    for(let i=0;i<data.I;i++) segments.push({type:'interrupt', dur:5/60});
-    for(let p=0;p<data.P;p++) segments.push({type:'projectSwitch', dur:0});
-    // Focus filler
-    let filled = segments.reduce((s,x)=>s+x.dur,0);
-    const availableFocus = Math.max(0, data.focusTime);
-    let remainingFocus = availableFocus;
-    while(remainingFocus>0.01 && segments.length<200){
-      const block = Math.min(data.achievableFocusBlock, remainingFocus);
-      segments.push({type:'focus', dur:block});
-      remainingFocus -= block;
-      if(remainingFocus>0.01) segments.push({type:'recovery', dur:data.recoveryTime/Math.max(1,data.M+data.I+Math.max(0,data.P-1))});
+    function calc(){
+      const P = parseFloat(els('projects').value);
+      const M = parseFloat(els('meetings').value);
+      const I = parseFloat(els('interrupts').value);
+      const F = parseFloat(els('focusBlock').value);
+      const TS = parseFloat(els('taskSize').value);
+      const Rm = parseFloat(els('recovery').value);
+      const FragPct = parseFloat(els('fragmentPenalty').value)/100;
+      const nominalHours = 8;
+      const meetingTime = M * 0.5;
+      const interruptActive = I * (5/60);
+      const switches = M + I + Math.max(0, P-1);
+      const recoveryTime = switches * (Rm/60);
+      const fragmentationFactor = 1 / Math.max(1, Math.pow(P, 0.55));
+      const achievableFocusBlock = Math.min(F, TS, F * fragmentationFactor + 0.25);
+      let rawFocus = Math.max(0, nominalHours - meetingTime - interruptActive - recoveryTime);
+      const naturalBlocks = rawFocus / TS;
+      const forcedBlocks = rawFocus / achievableFocusBlock;
+      const extraSlices = Math.max(0, forcedBlocks - naturalBlocks);
+      const fragmentLoss = extraSlices * 0.05 * achievableFocusBlock * FragPct * 2;
+      const focusTime = Math.max(0, rawFocus - fragmentLoss);
+      const contextScatterIndex = Math.min(10, (P * 1.6) + (M*0.35) + (I*0.18));
+      const scatterPenalty = 1 - Math.min(0.55, (contextScatterIndex/10)*0.55);
+      const effectiveOutput = focusTime * scatterPenalty;
+      const switchCost = meetingTime + interruptActive + recoveryTime;
+      OUT.nominal.textContent = nominalHours.toFixed(1)+ 'h';
+      OUT.focus.textContent = focusTime.toFixed(1)+ 'h';
+      OUT.effective.textContent = effectiveOutput.toFixed(1)+ 'h';
+      OUT.util.textContent = Math.round((effectiveOutput/nominalHours)*100)+'%';
+      OUT.switchCost.textContent = switchCost.toFixed(1)+'h';
+      OUT.fragmentLoss.textContent = fragmentLoss.toFixed(1)+'h';
+      OUT.contextIndex.textContent = contextScatterIndex.toFixed(1);
+  const metrics = {P,M,I,F,TS,focusTime,effectiveOutput,meetingTime,interruptActive,recoveryTime,achievableFocusBlock};
+  drawWeek(metrics);
+  // Second & third pass attempts if width was 0
+  requestAnimationFrame(()=>drawWeek(metrics));
+  setTimeout(()=>drawWeek(metrics),90);
+  setTimeout(()=>drawWeek(metrics),240);
     }
 
-    // Sort by type priority to mix (simple shuffle for visual variety)
-    segments.sort((a,b)=>Math.random()-.5);
-
-    // Convert to positioned bars
-    let cursor=left; const pxPerHour = dayWidth/totalHours;
-    const colored=[]; let focusSum=0, effSum=0; const effFactor = data.effectiveOutput/Math.max(0.01,data.focusTime);
-    segments.forEach(s=>{
-      const w = s.dur*pxPerHour;
-      if(cursor + w > left+dayWidth) return;
-      let color='#90a4ae';
-      if(s.type==='focus'){color='#1e88e5'; focusSum+=s.dur; effSum+=s.dur*effFactor;}
-      else if(s.type==='meeting') color='#ff7043';
-      else if(s.type==='interrupt') color='#ef5350';
-      else if(s.type==='recovery') color='#ab47bc';
-      else if(s.type==='projectSwitch') color='#26a69a';
-      colored.push({x:cursor,y:top+4,w, h:height-8, color, type:s.type, dur:s.dur});
-      cursor+=w;
+  function drawWeek(data){
+    const dpr = window.devicePixelRatio||1;
+    // Fallback width if layout not resolved yet
+  let logicalWidth = weekCanvas.clientWidth;
+    if(!logicalWidth || logicalWidth < 50) {
+      logicalWidth = weekCanvas.parentElement ? weekCanvas.parentElement.clientWidth : 900;
+      if(!logicalWidth || logicalWidth < 50) logicalWidth = 900; // final fallback
+    }
+  weekCanvas.width = logicalWidth * dpr;
+  weekCanvas.height = 520 * dpr;
+    const ctxW = weekCanvas.getContext('2d');
+    ctxW.setTransform(dpr,0,0,dpr,0,0);
+    ctxW.clearRect(0,0,logicalWidth,520);
+    const margin = {top:30,left:60,right:30,bottom:30};
+    const workHours = {start:8,end:16};
+    const hourSpan = workHours.end - workHours.start; // 8
+    const days = ['Mon','Tue','Wed','Thu','Fri'];
+  const gridW = logicalWidth - margin.left - margin.right;
+    const gridH = 460; // drawing area height
+    const colW = gridW / days.length;
+    const hourToY = h => margin.top + ( (h - workHours.start) / hourSpan) * gridH;
+    // Background & vertical day columns
+    ctxW.font = '12px system-ui';
+    days.forEach((d,i)=>{
+      const x = margin.left + i*colW;
+      ctxW.fillStyle = i%2? '#f5f7f9' : '#f1f5f9';
+      ctxW.fillRect(x, margin.top, colW, gridH);
+      ctxW.fillStyle = '#24323d';
+      ctxW.font = '600 13px system-ui';
+      ctxW.fillText(d, x + 8, margin.top - 8);
     });
-
-    colored.forEach(seg=>{
-      ctx.fillStyle=seg.color;
-      ctx.globalAlpha = seg.type==='focus'?0.95:0.85;
-      ctx.fillRect(seg.x,seg.y,seg.w,seg.h);
+    // Hour lines
+    for(let h=workHours.start; h<=workHours.end; h++){
+      const y = hourToY(h);
+      ctxW.strokeStyle = '#d2d9e0';
+      ctxW.lineWidth = (h%1===0)?1:0.5;
+      ctxW.beginPath(); ctxW.moveTo(margin.left, y); ctxW.lineTo(margin.left+gridW, y); ctxW.stroke();
+      ctxW.fillStyle = '#4a5965';
+      ctxW.font = '11px system-ui';
+      ctxW.fillText((h<10?'0':'')+Math.floor(h)+':00', 10, y+4);
+    }
+    // Build per-day schedule
+    const meetingDur = 0.5; // hours
+    const interruptDur = 5/60; // hours
+    const recoveryDur = (data.recoveryTime / Math.max(1, data.M + data.I + Math.max(0,data.P-1))) || 0; // average per event
+    const usableFocus = data.focusTime; // per day
+    const achievableBlock = data.achievableFocusBlock;
+    const meetingSlots = [8.5,9,10,11,13,14,15];
+    const palette = {
+      focus:'#1e88e5', meeting:'#ff7043', interrupt:'#ef5350', recovery:'#ab47bc', project:'#26a69a', lunch:'#ffa000'
+    };
+    function scheduleDay(dayIndex){
+      let events = [];
+      // Fixed lunch break 11:30 - 12:00
+      events.push({type:'lunch', start:11.5, end:12});
+      // Meetings
+      for(let m=0; m<data.M; m++){
+        const start = meetingSlots[(m+dayIndex)%meetingSlots.length];
+        events.push({type:'meeting', start, end:start+meetingDur});
+        events.push({type:'recovery', start:start+meetingDur, end:start+meetingDur+recoveryDur});
+      }
+      // Sort
+      events.sort((a,b)=>a.start-b.start);
+      // Insert focus blocks between events
+      let pointer = workHours.start;
+      let remainingFocus = usableFocus;
+      const pushFocus = (gapEnd)=>{
+        while(remainingFocus>0.05 && pointer < gapEnd){
+          const maxEnd = Math.min(gapEnd, pointer + Math.min(achievableBlock, remainingFocus));
+          if(maxEnd - pointer < 0.05) break;
+            events.push({type:'focus', start:pointer, end:maxEnd});
+            remainingFocus -= (maxEnd - pointer);
+            pointer = maxEnd;
+            if(remainingFocus>0.05 && pointer < gapEnd){
+              // micro recovery between fragmented focus blocks
+              const recEnd = Math.min(gapEnd, pointer + recoveryDur*0.4);
+              if(recEnd - pointer > 0.03){ events.push({type:'recovery', start:pointer, end:recEnd}); pointer = recEnd; }
+            }
+        }
+      };
+      events.forEach(ev=>{
+        if(pointer < ev.start) pushFocus(ev.start);
+        pointer = Math.max(pointer, ev.end);
+      });
+      if(pointer < workHours.end) pushFocus(workHours.end);
+      // Interruptions: pick random focus blocks > interruptDur
+      const focusBlocks = events.filter(e=>e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
+      for(let k=0; k<data.I && focusBlocks.length; k++){
+        const idx = (k*37 + dayIndex*13) % focusBlocks.length;
+        const fb = focusBlocks[idx];
+        const mid = fb.start + (fb.end - fb.start)* (0.3 + 0.4*((k+dayIndex)%3)/2);
+        const intStart = Math.max(fb.start, Math.min(fb.end - interruptDur, mid - interruptDur/2));
+        const intEnd = intStart + interruptDur;
+        // Split focus block
+        events = events.filter(e=> e!==fb);
+        if(intStart - fb.start > 0.04) events.push({type:'focus', start:fb.start, end:intStart});
+        events.push({type:'interrupt', start:intStart, end:intEnd});
+        if(intEnd + recoveryDur < fb.end) {
+          events.push({type:'recovery', start:intEnd, end:Math.min(fb.end, intEnd+recoveryDur)});
+          if(fb.end - (intEnd+recoveryDur) > 0.05) events.push({type:'focus', start:intEnd+recoveryDur, end:fb.end});
+        } else if(fb.end - intEnd > 0.04) {
+          events.push({type:'focus', start:intEnd, end:fb.end});
+        }
+      }
+      // Clip overflow
+      events = events.filter(e=> e.start < workHours.end && e.end > workHours.start);
+      events.forEach(e=> { e.start = Math.max(e.start, workHours.start); e.end = Math.min(e.end, workHours.end); });
+      return events.sort((a,b)=> a.start - b.start || a.type.localeCompare(b.type));
+    }
+    // Draw events
+    days.forEach((d,di)=>{
+      const dayEvents = scheduleDay(di);
+      const baseX = margin.left + di*colW;
+      dayEvents.forEach(ev=>{
+        const x = baseX + 4;
+        const y = hourToY(ev.start) + 1;
+        const w = colW - 8;
+        const h = Math.max(4, (ev.end - ev.start)/hourSpan * gridH - 2);
+        ctxW.fillStyle = palette[ev.type] || '#90a4ae';
+        ctxW.globalAlpha = ev.type==='focus'? 0.90 : 0.85;
+        ctxW.beginPath();
+        ctxW.roundRect ? ctxW.roundRect(x,y,w,h,6) : ctxW.fillRect(x,y,w,h);
+        ctxW.fill();
+        ctxW.globalAlpha = 1;
+        ctxW.fillStyle = '#ffffff';
+        ctxW.font = '600 10px system-ui';
+        const label = ev.type==='focus'? 'Focus' : ev.type==='meeting'? 'Meet' : ev.type==='interrupt'? 'Int' : ev.type==='recovery'? 'Rec' : ev.type;
+        if(h > 14) ctxW.fillText(label, x+6, y+12);
+      });
     });
-    ctx.globalAlpha=1;
-
-    // Effective overlay on focus blocks (striped pattern)
-    ctx.save();
-    ctx.globalCompositeOperation='multiply';
-    ctx.fillStyle='rgba(255,255,255,0.18)';
-    colored.filter(s=>s.type==='focus').forEach(seg=>{
-      const effW = seg.w * effFactor;
-      ctx.fillRect(seg.x, seg.y, effW, seg.h);
-    });
-    ctx.restore();
-
-    // Labels
-    ctx.fillStyle='#1e2932';
-    ctx.fillText('Work Day Timeline (ordered representation)', left, top-10);
-    for(let h=0; h<=8; h++){
-      const x = left + h*pxPerHour;
-      ctx.strokeStyle='#e2e8f0'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x, top+height); ctx.lineTo(x, top+height+6); ctx.stroke();
-      ctx.fillStyle='#475569'; ctx.fillText(h+':00', x-10, top+height+20);
+    // Title
+    ctxW.fillStyle = '#1e2932';
+    ctxW.font = '600 14px system-ui';
+    ctxW.fillText('Weekly Calendar (Simulated)', margin.left, 18);
+    if(!weekCanvas.dataset.initialized){
+      weekCanvas.dataset.initialized = '1';
     }
   }
 
