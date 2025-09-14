@@ -368,8 +368,9 @@ canvas#weekChart { height:760px; }
         cursor = Math.max(cursor, ev.end);
       }
       if(cursor < workHours.end) allocateGap(cursor, workHours.end);
-      // Interruptions inserted into focus blocks
-  let focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
+  // Interruptions inserted into focus blocks (relaxed threshold to allow more candidate blocks)
+  const focusBlockMin = interruptDur + MIN_FOCUS*0.5;
+  let focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > focusBlockMin);
       let lastInterruptEnd = -Infinity;
       // Determine how many interrupts to place this day (use weekly map if available)
       let interruptsThisDay = 0;
@@ -381,45 +382,67 @@ canvas#weekChart { height:760px; }
         interruptsThisDay = basePerDay + (dayIndex < extra ? 1 : 0);
       }
       for(let k=0; k<interruptsThisDay && focusBlocks.length; k++){
-        let attempts = 0;
         let placed = false;
-        while(attempts < focusBlocks.length && !placed){
-          const idx = ( (k+attempts)*37 + dayIndex*13 ) % focusBlocks.length;
-          const fb = focusBlocks[idx];
-          const mid = fb.start + (fb.end - fb.start) * (0.3 + 0.4*((k+dayIndex+attempts)%3)/2);
+        focusBlocks.sort((a,b)=>(b.end-b.start)-(a.end-a.start));
+        for(let bi=0; bi<focusBlocks.length && !placed; bi++){
+          const fb = focusBlocks[bi];
+          const fbLen = fb.end - fb.start;
+          const wantSplit = fbLen >= interruptDur + 2*MIN_FOCUS;
+          const mid = fb.start + fbLen * (0.35 + 0.3*((k+bi+dayIndex)%3)/2);
           let intStart = Math.max(fb.start, Math.min(fb.end - interruptDur, mid - interruptDur/2));
-          // Ensure not back-to-back with previous interruption
           if(intStart < lastInterruptEnd + interruptDur*0.05){
             const shift = (lastInterruptEnd + interruptDur*0.05) - intStart;
-            if(intStart + shift + interruptDur <= fb.end){
-              intStart += shift;
-            } else {
-              attempts++; // try another block
-              continue;
-            }
+            if(intStart + shift + interruptDur <= fb.end) intStart += shift; else continue;
           }
-          // Enforce a larger focus gap between interruptions
           if(lastInterruptEnd > -Infinity){
             const sinceLast = intStart - lastInterruptEnd;
             if(sinceLast < MIN_INTERRUPT_GAP){
-              // Try shifting forward inside the block if space allows
-              const needed = MIN_INTERRUPT_GAP - sinceLast;
-              if(intStart + needed + interruptDur <= fb.end){
-                intStart += needed;
-              } else {
-                attempts++; // pick another block
-                continue;
+              const need = MIN_INTERRUPT_GAP - sinceLast;
+              if(intStart + need + interruptDur <= fb.end) intStart += need; else continue;
+            }
+          }
+          const left = intStart - fb.start;
+          const right = fb.end - (intStart + interruptDur);
+          if(wantSplit && (left < MIN_FOCUS || right < MIN_FOCUS)){
+            intStart = fb.start + (fbLen - interruptDur)/2;
+          }
+          const intEnd = intStart + interruptDur;
+          if(wantSplit){
+            const l2 = intStart - fb.start;
+            const r2 = fb.end - intEnd;
+            if(l2 < MIN_FOCUS || r2 < MIN_FOCUS){
+              if(fbLen - interruptDur >= MIN_FOCUS){
+                intStart = fb.start; // flush to start
               }
             }
           }
-          const intEnd = intStart + interruptDur;
+          // Commit placement
+          const finalEnd = intStart + interruptDur;
           events = events.filter(e=> e!==fb);
           if(intStart - fb.start >= MIN_FOCUS) events.push({type:'focus', start:fb.start, end:intStart});
-          events.push({type:'interrupt', start:intStart, end:intEnd});
-          if(fb.end - intEnd >= MIN_FOCUS) events.push({type:'focus', start:intEnd, end:fb.end});
-          lastInterruptEnd = intEnd;
+          events.push({type:'interrupt', start:intStart, end:finalEnd});
+          if(fb.end - finalEnd >= MIN_FOCUS) events.push({type:'focus', start:finalEnd, end:fb.end});
+          lastInterruptEnd = finalEnd;
           placed = true;
-          focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > interruptDur*1.2);
+          focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > focusBlockMin);
+        }
+        if(!placed && focusBlocks.length){
+          // Fallback force placement into largest block
+          focusBlocks.sort((a,b)=>(b.end-b.start)-(a.end-a.start));
+          const fb = focusBlocks[0];
+          const fbLen = fb.end - fb.start;
+          let intStart = fb.start + (fbLen - interruptDur)/2;
+          if(intStart < lastInterruptEnd + interruptDur*0.05){
+            const adjust = (lastInterruptEnd + interruptDur*0.05) - intStart;
+            if(intStart + adjust + interruptDur <= fb.end) intStart += adjust;
+          }
+          const intEnd = intStart + interruptDur;
+          events = events.filter(e=> e!==fb);
+          if(intStart > fb.start) events.push({type:'focus', start:fb.start, end:intStart, synthetic:true});
+          events.push({type:'interrupt', start:intStart, end:intEnd});
+          if(intEnd < fb.end) events.push({type:'focus', start:intEnd, end:fb.end, synthetic:true});
+          lastInterruptEnd = intEnd;
+          focusBlocks = events.filter(e=> e.type==='focus' && (e.end - e.start) > focusBlockMin);
         }
       }
       // Clip & sort
